@@ -1157,7 +1157,7 @@ ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
                        "--l2_filter","--l2_mtu","--L2_forward", 
                        "--L3_raw","--inhook","--outhook",
                        "--rbind_addr","--rbind_port",
-                       "--quiet"]
+                       "--quiet","--dont_kill"]
 
 #####################################
 ## Global header for pcap file
