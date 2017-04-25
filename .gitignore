@@ -1,0 +1,8 @@
+*.swp
+*.swo
+*.pyc
+*.pem
+id_rsa
+id_rsa.pub
+logs/*
+
