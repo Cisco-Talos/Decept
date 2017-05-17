@@ -285,7 +285,7 @@ class DeceptProxy():
             return
 
         try:
-            if "windows" in system().lower():
+            if "windows" in system().lower() or "cygwin" in system().lower():
                 self.server_socket.bind((self.lhost,self.lport))
             
             elif self.server_socket.family == socket.AF_PACKET:
@@ -371,7 +371,7 @@ class DeceptProxy():
                     output("[>.>] Received Connection from UnixSocket",GREEN) 
 
 
-                if "windows" in system().lower():
+                if "windows" in system().lower() or "cygwin" in system().lower():
                     import threading 
                     proxy_thread = threading.Thread(target = self.proxy_loop, 
                                                        args = (csock,
@@ -418,7 +418,7 @@ class DeceptProxy():
                 if self.local_end_type == "udp" and not self.receive_first:
                     # we need to wait for data before we connect.
                     pass
-                elif "windows" in system().lower():
+                elif "windows" in system().lower() or "cygwin" in system().lower():
                     remote_socket.connect((rhost,rport))
                 elif remote_socket.family == socket.AF_UNIX:
                     remote_socket.connect((rhost)) 
