@@ -582,7 +582,7 @@ class DeceptProxy():
             try:
                 self.fuzzerData.port = self.rport 
                 self.fuzzerData.setMessagesToFuzzFromString("0")
-                self.fuzzerData.writeToFile(f,defaultComments=True) 
+                self.fuzzerData.writeToFile(self.fuzz_file,defaultComments=True) 
             except Exception as e:
                 output(str(e),YELLOW)
                 output("[-.-] Couldn't write fuzz data. Where's Mutiny?",RED)
@@ -800,7 +800,10 @@ class DeceptProxy():
             m.direction = direction
             # 2 == raw
             try:
-                m.setMessageFrom(sourceType=2,message=packet,isFuzzed=False)
+                fuzz=False
+                if len(self.fuzzerData.messageCollection.messages) == 0:
+                    fuzz=True
+                m.setMessageFrom(sourceType=2,message=packet,isFuzzed=fuzz)
             except:
                 #older verison of mutiny
                 m.message = bytearray(packet)
