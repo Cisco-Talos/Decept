@@ -583,12 +583,10 @@ class DeceptProxy():
             try:
                 self.fuzzerData.port = self.rport 
                 self.fuzzerData.setMessagesToFuzzFromString("0")
-                self.fuzzerData.writeToFile(self.fuzz_file) 
+                self.fuzzerData.writeToFile(self.fuzz_file,defaultComments=True) 
             except Exception as e:
                 output(str(e),YELLOW)
                 output("[-.-] Couldn't write fuzz data. Where's Mutiny?",RED)
-
-
 
 
     # will need to filter frames based on mac addresses. 
@@ -801,7 +799,16 @@ class DeceptProxy():
         if self.fuzzerData:
             m = mutiny.Message()
             m.direction = direction
-            m.message = bytearray(packet)
+            # 2 == raw
+            try:
+                fuzz=False
+                if len(self.fuzzerData.messageCollection.messages) == 0:
+                    fuzz=True
+                m.setMessageFrom(sourceType=2,message=packet,isFuzzed=fuzz)
+            except:
+                #older verison of mutiny
+                m.message = bytearray(packet)
+
             self.fuzzerData.messageCollection.addMessage(m)
             
         if self.pcap_file:
