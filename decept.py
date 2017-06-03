@@ -223,7 +223,7 @@ class DeceptProxy():
 
         if match(r'\d{1,3}(\.\d{1,3}){3}',host):
             s_fam = socket.AF_INET
-        elif match(r'([0-9A-Fa-f]{0,4}:)*(:[0-9A-Fa-f]{1,4})+',host) and host.find("::") == host.rfind("::"):
+        elif match(r'([0-9A-Fa-f]{0,4}:?)(:[0-9A-Fa-f]{1,4}:?)+',host) and host.find("::") == host.rfind("::"):
             s_fam = socket.AF_INET6 
         elif match(r'([0-9A-fa-f]{2}:){5}[0-9A-fa-f]{2}',host):
             if "darwin" in system().lower():
@@ -401,7 +401,6 @@ class DeceptProxy():
 
 
     def proxy_loop(self,local_socket,rhost,rport):
-        output(self.rhost)
 
         remote_socket = self.socket_plinko(rhost,self.remote_end_type)
         
@@ -423,6 +422,8 @@ class DeceptProxy():
                     remote_socket.connect((rhost,rport))
                 elif remote_socket.family == socket.AF_UNIX:
                     remote_socket.connect((rhost)) 
+                elif remote_socket.family == socket.AF_INET6:
+                    remote_socket.connect((rhost,rport,0,0))
                 # to avoid dumb lack of socket.AF_PACKET in osx
                 elif "darwin" not in system().lower() and remote_socket.family != socket.AF_PACKET:
                     remote_socket.connect((rhost,rport))
@@ -431,7 +432,7 @@ class DeceptProxy():
 
         except Exception as e:
             output(str(e),YELLOW)
-            output("[x.x] Unable to connect to %s:%s" % (rhost,str(rport)), RED)
+            output("[x.x] Unable to connect to %s,%s" % (rhost,str(rport)), RED)
             sys.exit()
 
         if self.local_end_type == "ssl":
