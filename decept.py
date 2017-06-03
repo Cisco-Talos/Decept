@@ -117,7 +117,7 @@ class DeceptProxy():
         if "\\x00" in self.rhost:
             self.rhost = "\x00%s" % self.rhost
 
-        self.rbind_addr = ""
+        self.rbind_addr = "0.0.0.0"
         self.rbind_port = 0
 
         # ssl options for those who care
@@ -405,7 +405,8 @@ class DeceptProxy():
 
         remote_socket = self.socket_plinko(rhost,self.remote_end_type)
         
-        if self.rbind_addr:
+        if (self.rbind_addr != "0.0.0.0") or (self.rbind_port > 0):
+            output("[!.!] Binding Rsock to %s:%d"%(self.rbind_addr,self.rbind_port),CYAN)
             remote_socket.bind((self.rbind_addr,self.rbind_port))
 
         # schro == schroedinger
@@ -971,7 +972,7 @@ def main():
         proxy.l2_MTU = int(dumb_arg_helper("--mtu",1500))
         proxy.l2_filter = dumb_arg_helper("--l2_filter")
         proxy.L3_raw = dumb_arg_helper("--l3_raw")
-        proxy.rbind_addr = dumb_arg_helper("--rbind_addr")
+        proxy.rbind_addr = dumb_arg_helper("--rbind_addr") or "0.0.0.0"
         proxy.rbind_port = int(dumb_arg_helper("--rbind_port",0)) 
         
 
