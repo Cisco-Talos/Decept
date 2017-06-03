@@ -110,6 +110,8 @@ class DeceptProxy():
         # don't exit if no data (streaming)
         self.dont_kill = False
 
+        self.udp_port_range = None 
+
         #! verify this
         if "\\x00" in self.lhost:
             self.lhost = "\x00%s" % self.lhost
@@ -199,6 +201,8 @@ class DeceptProxy():
                     tmp,(_,tmpport) = sock.recvfrom(65535) 
                     if tmpport != self.lport and tmpport != self.rport and not self.srcport: 
                         self.srcport = tmpport
+                    if self.udp_port_range and tmpport != self.rport:
+                        self.lport = tmpport
                 if len(tmp): 
                     ret+=tmp
                 else:
@@ -220,6 +224,8 @@ class DeceptProxy():
             return sys.stdin
         if "stdout" in endpoint:
             return sys.stdout
+    
+        # Test dnslookup first.
 
         if match(r'\d{1,3}(\.\d{1,3}){3}',host):
             s_fam = socket.AF_INET
@@ -377,9 +383,6 @@ class DeceptProxy():
                                                        args = (csock,
                                                                self.rhost,
                                                                self.rport)) 
-                    #output("[^.^];; Multithreading on Windows not supported yet! (sorry)",YELLOW)
-                    #self.proxy_loop(csock,self.rhost,self.rport)
-                    #continue
                 else:
                     proxy_thread = multiprocessing.Process(target = self.proxy_loop, 
                                                            args = (csock,
@@ -390,6 +393,8 @@ class DeceptProxy():
 
             elif self.local_end_type == "udp":
                 self.proxy_loop(self.server_socket,self.rhost,self.rport)
+                self.exit_triggers()
+                return
 
             elif self.server_socket == sys.stdin:
                 self.proxy_loop(sys.stdin,self.rhost,self.rport)
@@ -472,12 +477,35 @@ class DeceptProxy():
                     self.buffered_sendto(schro_local,remote_buffer,(self.lhost,self.lport))
         
         elif not self.receive_first and self.local_end_type == "udp":
-            while True:
-                readable,__,__ = select.select([schro_local],[],[schro_local],self.timeout)
-                if schro_local in readable:
-                    break
+            # [>_>] port range is going to override schro_local, cuz I'm lazy
+            if self.udp_port_range:
+                    
+                schro_local = [schro_local]
+                schro_local_range = validateNumberRange(self.udp_port_range,True) # flatten out number range into list of integers
+                output("[!-!] Attempting to bind %d UDP ports : %s" %(len(schro_local_range),self.udp_port_range),GREEN)
+                for port in schro_local_range:
+                    tmp = self.socket_plinko(self.lhost,self.local_end_type) 
+                    # shoulda implimented server_init better to take a socket, eh.
+                    try:
+                        tmp.bind((self.lhost,port))
+                        tmp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
+                        schro_local.append(tmp) 
+                    except:
+                        output("[x.x] Unable to bind UDP %s:%d."%(self.lhost,port),YELLOW)
             
-            remote_socket.connect((rhost,rport))
+                while True:
+                    readable,__,__ = select.select(schro_local,[],schro_local,self.timeout)
+                    if len(readable) > 0:
+                        break
+
+            else: #udp && !udp_port_range
+                while True:
+                    readable,__,__ = select.select([schro_local],[],[schro_local],self.timeout)
+                    if len(readable) > 0:
+                        break
+        
+            if self.remote_end_type != "udp":
+                remote_socket.connect((rhost,rport))
             if self.remote_end_type == "ssl":
                 try: 
                     schro_remote = ssl.wrap_socket(remote_socket,cert_reqs=ssl.CERT_NONE) 
@@ -489,7 +517,15 @@ class DeceptProxy():
                  
 
         buf = ""
-        schro_list = [schro_local, schro_remote]
+        # don't know if port range or not
+        active_udp = None
+        schro_list = []
+        try:
+            schro_list = schro_local[:] 
+            schro_list.append(schro_remote)
+            active_udp = schro_local[0] 
+        except:
+            schro_list = [schro_local, schro_remote]
 
         try:
             while True: 
@@ -508,7 +544,6 @@ class DeceptProxy():
                 readable, __,exceptional = select.select(schro_list,[],schro_list,self.timeout)    
                 
                 # if there's any sockets ready to read, get data
-                #print readable
                 for s in readable:
                     try:
                         buf = self.get_bytes(s)
@@ -550,8 +585,25 @@ class DeceptProxy():
                             elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
                                 sys.stdout.write(buf)      
                             else:   
-                                self.buffered_sendto(schro_local,buf,(self.lhost,self.srcport))
-                                output("[o.o] Sent %d bytes to local (%s:%d)" % (len(buf),self.lhost,self.srcport),CYAN)
+                                if active_udp == None:
+                                    self.buffered_sendto(schro_local,buf,(self.lhost,self.srcport))
+                                else:
+                                    active_port = active_udp.getsockname()[1]  
+                                    self.buffered_sendto(active_udp,buf,(active_udp.getsockname()[0],self.lport))
+                                output("[o.o] Sent %d bytes to local (%s:%d)" % (len(buf),self.lhost,self.lport),CYAN)
+
+                    try: #udp port range case
+                        if s in schro_local: 
+                            buf = self.outbound_handler(buf,self.lhost,self.rhost) 
+                            if len(buf):
+                                self.pkt_count+=1
+                                active_udp = s # so we know where to throw packets back to 
+                                self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
+                                output("[o.o] Sent %d bytes to remote (%s:%d)" % (len(buf),self.rhost,self.rport),GREEN)
+                             
+                    except Exception as e:
+                        pass
+                        
 
                 if self.dont_kill:
                     continue 
@@ -972,9 +1024,9 @@ def main():
         proxy.dumpraw = dumb_arg_helper("--dumpraw","",True) 
         proxy.l2_MTU = int(dumb_arg_helper("--mtu",1500))
         proxy.l2_filter = dumb_arg_helper("--l2_filter")
-        proxy.L3_raw = dumb_arg_helper("--l3_raw")
         proxy.rbind_addr = dumb_arg_helper("--rbind_addr") or "0.0.0.0"
         proxy.rbind_port = int(dumb_arg_helper("--rbind_port",0)) 
+        proxy.udp_port_range = dumb_arg_helper("--udppr")
         
 
         # look for and parse the files first...
@@ -1166,7 +1218,7 @@ ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
                        "--l2_filter","--l2_mtu","--L2_forward", 
                        "--L3_raw","--inhook","--outhook",
                        "--rbind_addr","--rbind_port",
-                       "--quiet","--dont_kill"]
+                       "--quiet","--dont_kill","--udppr"]
 
 #####################################
 ## Global header for pcap file
@@ -1265,7 +1317,52 @@ typedef struct pcaprec_hdr_s {
         guint32 orig_len;       /* actual length of packet */
 } pcaprec_hdr_t;
 '''
+
 #########################
+# Utility Functions
+#########################
+# Takes a string of numbers, seperated via commas
+# or by hyphens, and generates an appropriate list of
+# numbers from it.
+# e.g. str("1,2,3-6")  => list([1,2,xrange(3,7)])
+#
+# If flattenList=True, will return a list of distinct elements
+#
+# If given an invalid number string, returns None
+# (lifted straight from mutiny,lul)
+def validateNumberRange(inputStr, flattenList=False):
+    retList = []
+    tmpList = filter(None,inputStr.split(','))
+
+    # Print msg if invalid chars/typo detected
+    for num in tmpList:
+        try:
+            retList.append(int(num))
+        except ValueError:
+            if '-' in num:
+                intRange = num.split('-')
+                # Invalid x-y-z
+                if len(intRange) > 2:
+                    print "Invalid range given"
+                    return None
+                try:
+                    if not flattenList:
+                        # Append iterator with bounds = intRange
+                        retList.append(xrange(int(intRange[0]),int(intRange[1])+1))
+                    else:
+                        # Append individual elements
+                        retList.extend(range(int(intRange[0]),int(intRange[1])+1))
+                except TypeError:
+                    print "Invalid range given"
+                    return None
+            else:
+                print "Invalid number given"
+                return None
+    # All elements in the range are valid integers or integer ranges
+    if flattenList:
+        # If list is flattened, every element is an integer
+        retList = sorted(list(set(retList)))
+    return retList
 
 
 if __name__ == "__main__":
