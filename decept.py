@@ -225,7 +225,6 @@ class DeceptProxy():
         if "stdout" in endpoint:
             return sys.stdout
     
-        # Test dnslookup first.
 
         if match(r'\d{1,3}(\.\d{1,3}){3}',host):
             s_fam = socket.AF_INET
@@ -406,6 +405,14 @@ class DeceptProxy():
 
 
     def proxy_loop(self,local_socket,rhost,rport):
+        try:
+            rhost = socket.gethostbyname(rhost)
+        except Exception as e:
+            if "Temporary failure in name resolution" in e:
+                output(str(e),YELLOW)
+                output("[x.x] Unable to resolve DNS name: %s" % (rhost), RED)
+                local_socket.close()
+                sys.exit()
 
         remote_socket = self.socket_plinko(rhost,self.remote_end_type)
         
@@ -418,6 +425,7 @@ class DeceptProxy():
         schro_remote = remote_socket
         schro_local = local_socket
         
+                    
         try:
             if self.remote_end_type in ConnectionBased:
                 if self.local_end_type == "udp" and not self.receive_first:
@@ -1163,7 +1171,7 @@ class ETH(Structure):
 
 # End Raw Socket Structs
 
-ValidEndpoints = ["ssl","udp","tcp","bridge","passthrough","stdin","stdout"]
+ValidEndpoints = ["ssl","udp","tcp","bridge","passthrough","stdin","stdout","unix"]
 ConnectionBased = ["ssl","tcp"]
 
 usage = '''
