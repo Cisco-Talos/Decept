@@ -90,7 +90,8 @@ if "darwin" in system().lower():
 #! <(^.^)>
 class DeceptProxy():
 
-    def __init__(self,lhost,lport,rhost,rport,local_end_type,remote_end_type,receive_first=False):
+    def __init__(self,lhost,lport,rhost,rport,local_end_type,remote_end_type,receive_first=False,
+                 local_cert=None,local_key=None):
         self.lhost = lhost
         self.lport = lport
         self.rhost = rhost
@@ -123,10 +124,7 @@ class DeceptProxy():
         self.rbind_port = 0
 
         # ssl options for those who care
-        #client_context = ssl.create_default_context()
-        #client_context.check_hostname = False
-        #client_context.verify_mode = ssl.CERT_NONE
-
+        
         #killswitch for closing sockets
         self.killswitch = multiprocessing.Event() 
 
@@ -158,6 +156,19 @@ class DeceptProxy():
         self.PCAP_PER_SESSION = False
         self.PCAP_SNAPLEN = 65535
 
+        print local_cert
+        self.local_certfile=local_cert
+        self.local_keyfile=local_key
+        self.remote_certfile=""
+        self.remote_keyfile=""
+        self.remote_verify=""
+
+        self.remote_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.remote_context.check_hostname = False
+        self.remote_context.verify_mode = ssl.CERT_NONE
+        
+        
+
         # on successful import, these will be the imported
         # functions "inbound_hook()" and "outbound_hook()"
         self.inbound_hook = None
@@ -167,8 +178,13 @@ class DeceptProxy():
         if self.local_end_type  == "ssl":
             try:
                 self.server_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-                self.server_context.load_cert_chain(certfile="cert.pem",keyfile="key.pem")
-            except:
+                if self.local_keyfile:
+                    self.server_context.load_cert_chain(certfile=self.local_certfile,keyfile=self.local_keyfile)
+                else:
+                    print self.local_certfile
+                    self.server_context.load_cert_chain(certfile=self.local_certfile)
+            except Exception as e:
+                print e
                 output("[x.x] Please generate keys before attempting to proxy ssl",RED)
                 output("[-_-] Protip: openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -nodes",CYAN)
                 sys.exit(0)
@@ -408,7 +424,7 @@ class DeceptProxy():
         try:
             rhost = socket.gethostbyname(rhost)
         except Exception as e:
-            if "Temporary failure in name resolution" in e:
+            if "Temporary failure in name resolution" in e or "Name or service" in e:
                 output(str(e),YELLOW)
                 output("[x.x] Unable to resolve DNS name: %s" % (rhost), RED)
                 local_socket.close()
@@ -460,7 +476,10 @@ class DeceptProxy():
         # need to wait for udp...
         if self.remote_end_type == "ssl" and self.local_end_type != "udp":
             try: 
-                schro_remote = ssl.wrap_socket(remote_socket,cert_reqs=ssl.CERT_NONE) 
+                if self.remote_certfile: 
+                    self.remote_context.load_cert_chain(certfile=self.remote_certfile,keyfile=self.remote_keyfile)
+                schro_remote = self.remote_context.wrap_socket(remote_socket) 
+
             except ssl.SSLError as e:
                 output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW)
                 output(str(e),RED)
@@ -516,7 +535,11 @@ class DeceptProxy():
                 remote_socket.connect((rhost,rport))
             if self.remote_end_type == "ssl":
                 try: 
-                    schro_remote = ssl.wrap_socket(remote_socket,cert_reqs=ssl.CERT_NONE) 
+
+                    if self.remote_certfile: 
+                        self.remote_context.load_cert_chain(certfile=self.remote_certfile,keyfile=self.remote_keyfile)
+                    schro_remote = self.remote_context.wrap_socket(remote_socket) 
+
                 except ssl.SSLError as e:
                     output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW)
                     output(str(e),RED)
@@ -1012,7 +1035,10 @@ def main():
             output("[x.x] Invalid localEnd given, exiting!",RED) 
             sys.exit()
 
-        proxy = DeceptProxy(lhost,lport,rhost,rport,local_end_type,remote_end_type)
+        lcert = dumb_arg_helper("--lcert","cert.pem")
+        lkey = dumb_arg_helper("--lkey")
+
+        proxy = DeceptProxy(lhost,lport,rhost,rport,local_end_type,remote_end_type,False,lcert,lkey)
 
         # Take care of all switches
         proxy.recv_first = True if "--recv_first" in sys.argv else False   
@@ -1035,11 +1061,17 @@ def main():
         proxy.rbind_addr = dumb_arg_helper("--rbind_addr") or "0.0.0.0"
         proxy.rbind_port = int(dumb_arg_helper("--rbind_port",0)) 
         proxy.udp_port_range = dumb_arg_helper("--udppr")
+
+        #ssl params, if needed
+        proxy.remote_keyfile = dumb_arg_helper("--rkey")
+        proxy.remote_certfile = dumb_arg_helper("--rcert")
+        proxy.remote_verify = dumb_arg_helper("--rverify")
         
 
         # look for and parse the files first...
         inbound_hook = dumb_arg_helper("--inhook")
         outbound_hook = dumb_arg_helper("--outhook")
+
 
         if inbound_hook or outbound_hook:
             import imp
@@ -1226,7 +1258,9 @@ ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
                        "--l2_filter","--l2_mtu","--L2_forward", 
                        "--L3_raw","--inhook","--outhook",
                        "--rbind_addr","--rbind_port",
-                       "--quiet","--dont_kill","--udppr"]
+                       "--quiet","--dont_kill","--udppr",
+                       "--lcert","--lkey","--rcert","--rkey",
+                       "--rverify"]
 
 #####################################
 ## Global header for pcap file
