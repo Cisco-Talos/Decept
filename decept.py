@@ -156,7 +156,6 @@ class DeceptProxy():
         self.PCAP_PER_SESSION = False
         self.PCAP_SNAPLEN = 65535
 
-        print local_cert
         self.local_certfile=local_cert
         self.local_keyfile=local_key
         self.remote_certfile=""
@@ -242,6 +241,7 @@ class DeceptProxy():
             return sys.stdout
     
 
+        print host
         if match(r'\d{1,3}(\.\d{1,3}){3}',host):
             s_fam = socket.AF_INET
         elif match(r'([0-9A-Fa-f]{0,4}:?)(:[0-9A-Fa-f]{1,4}:?)+',host) and host.find("::") == host.rfind("::"):
@@ -251,8 +251,9 @@ class DeceptProxy():
                 output("[x.x] RAW packet functionality in OSX not supported.")
                 sys.exit()
             # Automatically raw. 
-            if endpoint == "passthrough":
+            if endpoint == "passive":
                 # when we aren't bridging two interfaces
+                # 0x0300 => promiscuous mode
                 ret_socket = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300) 
             #endpoint == "bridge" 
             else: 
@@ -371,7 +372,6 @@ class DeceptProxy():
 
         # Alrighty, here's where we start to distinguish 
         # socket Family/type/protocol
-        # TODO
         self.server_socket_init()
 
         if self.fuzz_file: 
@@ -687,7 +687,7 @@ class DeceptProxy():
         LINTERFACE = self.lport 
         RINTERFACE = self.rport
 
-        if self.local_end_type == "passthrough":
+        if self.local_end_type == "passive":
             proto = ETH_P_ALL
         elif self.local_end_type == "bridge":
             #non-promisc
@@ -722,13 +722,13 @@ class DeceptProxy():
         inbound_local = LOCAL_INT_MAC + LMAC 
         outbound_local = LMAC + LOCAL_INT_MAC
         # Passthrough modes
-        passthrough_inbound = RMAC + LMAC
-        passthrough_outbound = LMAC + RMAC
+        passive_inbound = RMAC + LMAC
+        passive_outbound = LMAC + RMAC
     
         # in order to act as a L2 proxy, we need 2 flows....
         # ([us] -> [lo])--Decept-->([eth0] -> [them])
         # ([us] <- [lo])<--Decept--([eth0] <- [them])
-        # Also need to support passthrough
+        # Also need to support passive
         # ([int1] <--Decept--> [int2]
         
         sock_list = [r_sock]
@@ -741,7 +741,7 @@ class DeceptProxy():
                 readable, __,exceptional = select.select(sock_list,[],sock_list,self.timeout)    
 
                 # if there's any sockets ready to read, get data
-                if self.local_end_type == "passthrough":
+                if self.local_end_type == "passive":
                     for s in readable:
                         buff = self.get_raw_bytes(s) 
                         if not buff:
@@ -778,11 +778,11 @@ class DeceptProxy():
                                     buff = RMAC + REMOTE_INT_MAC + buff[:12]
                                     self.buffered_sendto(r_sock,buff,(RINTERFACE,0))
 
-                        elif buff[0:12] == passthrough_outbound:
+                        elif buff[0:12] == passive_outbound:
                                 output(macdump(buff[0:6]) + " " + macdump(buff[6:12]) + " >> outbound >>",PURPLE)
                                 buff = self.outbound_handler(buff)
 
-                        elif buff[0:12] == passthrough_inbound: 
+                        elif buff[0:12] == passive_inbound: 
                                 output(macdump(buff[0:6]) + " " + macdump(buff[6:12]) + " << inbound <<",PURPLE)
                                 buff = self.inbound_handler(buff) 
 
@@ -1203,7 +1203,7 @@ class ETH(Structure):
 
 # End Raw Socket Structs
 
-ValidEndpoints = ["ssl","udp","tcp","bridge","passthrough","stdin","stdout","unix"]
+ValidEndpoints = ["ssl","udp","tcp","bridge","passive","stdin","stdout","unix"]
 ConnectionBased = ["ssl","tcp"]
 
 usage = '''
