@@ -110,6 +110,8 @@ class DeceptProxy():
 
         # don't exit if no data (streaming)
         self.dont_kill = False
+        # except if we get past expected_resp_count ^_^
+        self.expected_resp_count = 1
 
         self.udp_port_range = None 
 
@@ -158,16 +160,23 @@ class DeceptProxy():
 
         self.local_certfile=local_cert
         self.local_keyfile=local_key
-        self.remote_certfile=""
-        self.remote_keyfile=""
+        self.remote_certfile=local_cert
+        self.remote_keyfile=local_key
         self.remote_verify=""
 
+        '''
         self.remote_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-        self.remote_context.check_hostname = False
-        self.remote_context.verify_mode = ssl.CERT_NONE
-        
-        
+        self.remote_context.verify_mode = ssl.CERT_REQUIRED
+        self.remote_context.check_hostname = True
+        '''
 
+        self.remote_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+        try:
+            self.remote_context.load_verify_locations(cafile="ca.certs")
+        except Exception as e:
+            print e
+            
+        
         # on successful import, these will be the imported
         # functions "inbound_hook()" and "outbound_hook()"
         self.inbound_hook = None
@@ -180,7 +189,6 @@ class DeceptProxy():
                 if self.local_keyfile:
                     self.server_context.load_cert_chain(certfile=self.local_certfile,keyfile=self.local_keyfile)
                 else:
-                    print self.local_certfile
                     self.server_context.load_cert_chain(certfile=self.local_certfile)
             except Exception as e:
                 print e
@@ -215,9 +223,8 @@ class DeceptProxy():
                     # necessary for connectionless
                     tmp,(_,tmpport) = sock.recvfrom(65535) 
                     if tmpport != self.lport and tmpport != self.rport and not self.srcport: 
-                        self.srcport = tmpport
-                    if self.udp_port_range and tmpport != self.rport:
                         self.lport = tmpport
+                        self.lhost = _
                 if len(tmp): 
                     ret+=tmp
                 else:
@@ -240,13 +247,10 @@ class DeceptProxy():
         if "stdout" in endpoint:
             return sys.stdout
     
-
-        print host
         if match(r'\d{1,3}(\.\d{1,3}){3}',host):
             s_fam = socket.AF_INET
-        elif match(r'([0-9A-Fa-f]{0,4}:?)(:[0-9A-Fa-f]{1,4}:?)+',host) and host.find("::") == host.rfind("::"):
-            s_fam = socket.AF_INET6 
-        elif match(r'([0-9A-fa-f]{2}:){5}[0-9A-fa-f]{2}',host):
+
+        elif match(r'([0-9A-Fa-f]{2}:){5}[0-9A-Fa-f]{2}',host):
             if "darwin" in system().lower():
                 output("[x.x] RAW packet functionality in OSX not supported.")
                 sys.exit()
@@ -260,6 +264,10 @@ class DeceptProxy():
                 ret_socket = socket.socket(socket.AF_PACKET,socket.SOCK_RAW) 
             return ret_socket
 
+        elif match(r'([0-9A-Fa-f]{0,4}:?)(:[0-9A-Fa-f]{1,4}:?)+',host) and host.find("::") == host.rfind("::"):
+            print repr(host)
+            s_fam = socket.AF_INET6 
+        
         else:
             s_fam = socket.AF_UNIX  
         
@@ -551,6 +559,8 @@ class DeceptProxy():
         # don't know if port range or not
         active_udp = None
         schro_list = []
+        resp_count = 0 
+
         try:
             schro_list = schro_local[:] 
             schro_list.append(schro_remote)
@@ -571,7 +581,7 @@ class DeceptProxy():
                     if schro_remote != sys.stdout:
                         schro_remote.close() 
                     break 
-                 
+
                 readable, __,exceptional = select.select(schro_list,[],schro_list,self.timeout)    
                 
                 # if there's any sockets ready to read, get data
@@ -612,16 +622,12 @@ class DeceptProxy():
 
                             if self.local_end_type in ConnectionBased: 
                                 self.buffered_send(schro_local,buf)
-                                output("[o.o] Sent %d bytes to local (%s:%d)" % (len(buf),self.lhost,self.lport),CYAN)
                             elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
                                 sys.stdout.write(buf)      
                             else:   
-                                if active_udp == None:
-                                    self.buffered_sendto(schro_local,buf,(self.lhost,self.srcport))
-                                else:
-                                    active_port = active_udp.getsockname()[1]  
-                                    self.buffered_sendto(active_udp,buf,(active_udp.getsockname()[0],self.lport))
-                                output("[o.o] Sent %d bytes to local (%s:%d)" % (len(buf),self.lhost,self.lport),CYAN)
+                                self.buffered_sendto(schro_local,buf,(self.lhost,self.lport))
+                            output("[o.o] Sent %d bytes to local (%s:%d)" % (len(buf),self.lhost,self.lport),CYAN)
+                            resp_count+=1
 
                     try: #udp port range case
                         if s in schro_local: 
@@ -635,8 +641,10 @@ class DeceptProxy():
                     except Exception as e:
                         pass
                         
+                    if resp_count >= self.expected_resp_count:
+                        break
 
-                if self.dont_kill:
+                if self.dont_kill and resp_count < self.expected_resp_count:
                     continue 
             
                 if not byte_count or len(exceptional):
@@ -724,6 +732,9 @@ class DeceptProxy():
         # Passthrough modes
         passive_inbound = RMAC + LMAC
         passive_outbound = LMAC + RMAC
+
+        broadcast = "\xff\xff\xff\xff\xff\xff"
+        broadcast_outbound = broadcast + LMAC 
     
         # in order to act as a L2 proxy, we need 2 flows....
         # ([us] -> [lo])--Decept-->([eth0] -> [them])
@@ -749,8 +760,22 @@ class DeceptProxy():
                             break
                         # What about broadcasts??
                         # MAC MTU 1500
+                        if buff[0:12] == broadcast_outbound:
+                                output(macdump(buff[0:6]) + " " + macdump(buff[6:12]) + " Broadcast >>",YELLOW)
+                                buff = self.outbound_handler(buff)
+                                if self.L2_forward:
+                                    buff = RMAC + REMOTE_INT_MAC + buff[:12]
+                                    self.buffered_sendto(r_sock,buff,(RINTERFACE,0))
 
-                        if buff[0:12] == inbound_remote: 
+                        elif buff[0:6] == broadcast:
+                                output(macdump(buff[0:6]) + " " + macdump(buff[6:12]) + " << Broadcast",YELLOW)
+                                buff = self.inbound_handler(buff) 
+                                if self.L2_forward:
+                                    buff = LOCAL_INT_MAC + LMAC + buff[:12]
+                                    self.buffered_sendto(r_sock,buff,(LINTERFACE,0))
+
+
+                        elif buff[0:12] == inbound_remote: 
                                 output(macdump(buff[0:6]) + " " + macdump(buff[6:12]) + " << Remote",YELLOW)
                                 buff = self.inbound_handler(buff) 
                                 if self.L2_forward:
@@ -1036,7 +1061,7 @@ def main():
             sys.exit()
 
         lcert = dumb_arg_helper("--lcert","cert.pem")
-        lkey = dumb_arg_helper("--lkey")
+        lkey = dumb_arg_helper("--lkey","key.pem")
 
         proxy = DeceptProxy(lhost,lport,rhost,rport,local_end_type,remote_end_type,False,lcert,lkey)
 
