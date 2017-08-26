@@ -68,7 +68,7 @@ except:
 from ctypes import *
 from re import match
 from time import time
-from os.path import join
+from os.path import join,isfile
 from platform import system
 from os import mkdir,getcwd,remove
 
@@ -149,9 +149,9 @@ class DeceptProxy():
         self.lmac = ""
         self.rmac = ""
 
-        self.pcapdir = ""
-        self.PCAP_PER_SESSION = False
-        self.PCAP_SNAPLEN = 65535
+        self.pcap = ""
+        self.pps = False
+        self.snaplen = 65535
 
         self.local_certfile=local_cert
         self.local_keyfile=local_key
@@ -362,17 +362,38 @@ class DeceptProxy():
         
         # If we're attempting to write to a pcap, shouldn't it be required to be L2?
         # # Perhaps make a raw promisc regardless? for when no tcpdump/tshark?
-        if self.pcapdir:
-                try:
-                    mkdir(pcapdir)
-                except:
-                    pass
+        if self.pcap:
                 
-                PCAP_DIR = join(getcwd(),pcapdir) 
+            self.pcapdir = join(getcwd(),"pcap") 
+            try:
+                mkdir(self.pcapdir)
+            except:
+                pass
+            
+            if not isfile(join(self.pcapdir,self.pcap)):                  
+                # if it doesn't exist, write the headers/etc
+                self.pcapfd.write((pcap_global_hdr().get_byte_array()))
+
+                import tempfile
                 try:
-                    PCAP_FILE = open(join(PCAP_DIR,"testpcap.pcap"),"wb") 
-                except:
-                    PCAP_FILE = open(testpcap.pcap,"wb")
+                    self.pcapfd = open(join(self.pcapdir,self.pcap),"wb") 
+                except Exception as e:
+                    # why isn't this behaving as  the docs describe?
+                    # not returnning an open fd, just a tuple of (fd, name)
+                    # perhaps I am just dumb
+                    output(e,YELLOW)
+                    self.pcap = tempfile.mkstemp(suffix=".pcap",dir=self.pcapdir) 
+                    output("[i.i] Couldnt tmp pcap file %s instead!"%(self.pcap[1]),CYAN) 
+                    self.pcapfd = open(self.pcap[1],"wb")
+            else:
+                # if it does exist, just append packets
+                self.pcapfd = open(join(self.pcapdir,self.pcap),"ab") 
+
+            
+            #### Set up a promiscuous monitor socket such that we can actually get more than raw data.
+            self.pcap_sock = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x300)
+            
+
 
         if self.l2_filter:
             self.l2_filter = ''.join(chr(int(x,16)) for x in filter(None,l2_filter.split("x")))
@@ -386,8 +407,6 @@ class DeceptProxy():
         if self.fuzz_file: 
             self.fuzzerData = mutiny.FuzzerData()
 
-        if self.pcap_file:
-            self.pcap_file.write((pcap_global_hdr().get_byte_array()))
 
         #! Todo, no loop for UDP...
         while True:
@@ -722,6 +741,12 @@ class DeceptProxy():
                 output(str(e),YELLOW)
                 output("[-.-] Couldn't write fuzz data. Where's Mutiny?",RED)
 
+        if self.pcapfd:
+            try:
+                self.pcapfd.close()                     
+            except:
+                pass
+
 
     # will need to filter frames based on mac addresses. 
     # Only want mac addresses destined for either local_interface or remote_interface
@@ -962,19 +987,19 @@ class DeceptProxy():
 
             self.fuzzerData.messageCollection.addMessage(m)
             
-        if self.pcap_file:
+        if self.pcapfd:
+            
             packlen = len(packet)
             
             pcap_record = pcap_record_hdr(packlen)
-            if PCAP_SNAPLEN < packlen:
-                pcap_record.orig_len = PCAP_SNAPLEN
-                packlen = PCAP_SNAPLEN 
+            if self.snaplen < packlen:
+                pcap_record.orig_len = self.snaplen
+                packlen = self.snaplen 
             
             # write headers for packet
-            PCAP_FILE.write(pcap_record.get_byte_array())
+            self.pcapfd.write(pcap_record.get_byte_array())
             # write packet up to SNAPLEN
-            PCAP_FILE.write(packet[0:PCAP_SNAPLEN])
-
+            self.pcapfd.write(packet[0:self.snaplen])
 
     def buffered_send(self,sock,data):
         send_count = 0
@@ -1088,6 +1113,10 @@ def main():
         lport = sys.argv[2]
         rport = sys.argv[4]
 
+    if (rport == lport) and (rhost == lhost) and "--really" not in sys.argv:
+        output("[>_>] Really? If you really want to see this, use with --really flag",YELLOW) 
+        sys.exit()
+
     
     try:
 
@@ -1118,7 +1147,7 @@ def main():
 
         #next, ints and strings that don't require processing
         proxy.timeout = float(dumb_arg_helper("--timeout",2))
-        proxy.pcapdir = dumb_arg_helper("--pcapdir","",True)
+        proxy.pcap = dumb_arg_helper("--pcap","",True)
         proxy.snaplen = int(dumb_arg_helper("--snaplen",65535)) 
         proxy.tcp_MTU = int(dumb_arg_helper("--max-packet-len",30000))
         proxy.fuzz_file = dumb_arg_helper("--fuzzer","",True)  
@@ -1328,7 +1357,7 @@ L2 options:
   --l2_MTU    MTU       Set Maximum Transmision Unit for socket
   --l2_forward          Bridge the local interface and remote interface
 
-  --pcapdir PCAPDIR     Directory to store pcaps (extensions required)
+  --pcap PCAPDIR     Directory to store pcaps 
   --pps                 Create a new pcap for each session
   --snaplen SNAPLEN     Length of packet truncation
 
@@ -1341,13 +1370,13 @@ Abstract: decept.py \\x00localsocketname 0 \\x00remotesocketname 0
 '''
 
 ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
-                       "--udp","--pcapdir","--pps","--snaplen",
+                       "--udp","--pcap","--pps","--snaplen",
                        "--fuzzer","--dumpraw","-l","-r",
                        "--l2_filter","--l2_mtu","--L2_forward", 
                        "--L3_raw","--inhook","--outhook",
                        "--rbind_addr","--rbind_port",
                        "--quiet","--dont_kill","--udppr",
-                       "--expect",
+                       "--expect","--really",
                        "--lcert","--lkey","--rcert","--rkey",
                        "--rverify"]
 
@@ -1379,6 +1408,9 @@ class pcap_hdr_t(LittleEndianStructure):
     def get_byte_array(self):
         return bytearray(self)
 
+#####################################
+## Pcap file header
+#####################################
 
 def pcap_global_hdr(): 
     pcap_file = pcap_hdr_t(0xa1b2c3d4,0x2,0x4,0x0,0x0,0xffff,0x1)
@@ -1407,6 +1439,14 @@ pcap_file.network.value = 0x00000001
 #####################################
 ## Per-packet header
 #####################################
+'''
+typedef struct pcaprec_hdr_s {
+        guint32 ts_sec;         /* timestamp seconds */
+        guint32 ts_usec;        /* timestamp microseconds */
+        guint32 incl_len;       /* number of octets of packet saved in file */
+        guint32 orig_len;       /* actual length of packet */
+} pcaprec_hdr_t;
+'''
 
 class pcaprec_hdr_t(LittleEndianStructure):
     _pack_ = 1
@@ -1440,14 +1480,6 @@ def pcap_record_hdr(packet_len):
     pcap_record = pcaprec_hdr_t(sec,usec,pack_len,orig_len)
     return pcap_record
 
-'''
-typedef struct pcaprec_hdr_s {
-        guint32 ts_sec;         /* timestamp seconds */
-        guint32 ts_usec;        /* timestamp microseconds */
-        guint32 incl_len;       /* number of octets of packet saved in file */
-        guint32 orig_len;       /* actual length of packet */
-} pcaprec_hdr_t;
-'''
 
 #########################
 # Utility Functions
