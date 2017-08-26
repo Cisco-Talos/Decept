@@ -132,8 +132,7 @@ class DeceptProxy():
         # TCP-based protocols, inbound or outbound.
         self.l4_MTU = 30000
 
-        # .pcap/.fuzzer Options
-        self.pcap_file = ""
+        # .fuzzer Options
         self.fuzz_file = ""
         self.fuzzerData = ""
         
@@ -150,8 +149,11 @@ class DeceptProxy():
         self.rmac = ""
 
         self.pcap = ""
+        self.pcap_file = ""
         self.pps = False
         self.snaplen = 65535
+        self.pcap_interface = "eth0"
+        self.mon_flag = None 
 
         self.local_certfile=local_cert
         self.local_keyfile=local_key
@@ -337,10 +339,12 @@ class DeceptProxy():
             except Exception as e:
                 output(e)
 
+
+
+
     
     
     def server_loop(self):
-
         # make sure our ssl context is set appropriately
         if self.remote_verify:
             self.remote_context.verify_mode = ssl.CERT_REQUIRED
@@ -372,11 +376,11 @@ class DeceptProxy():
             
             if not isfile(join(self.pcapdir,self.pcap)):                  
                 # if it doesn't exist, write the headers/etc
-                self.pcapfd.write((pcap_global_hdr().get_byte_array()))
 
                 import tempfile
                 try:
                     self.pcapfd = open(join(self.pcapdir,self.pcap),"wb") 
+                    self.pcapfd.write((pcap_global_hdr().get_byte_array()))
                 except Exception as e:
                     # why isn't this behaving as  the docs describe?
                     # not returnning an open fd, just a tuple of (fd, name)
@@ -389,10 +393,26 @@ class DeceptProxy():
                 # if it does exist, just append packets
                 self.pcapfd = open(join(self.pcapdir,self.pcap),"ab") 
 
-            
+
             #### Set up a promiscuous monitor socket such that we can actually get more than raw data.
-            self.pcap_sock = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x300)
+            #### ETH_P_IP = 0x0800
+            self.pcap_sock = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
             
+            ### Set up our EBPF prog #### def create_ebpf_filter(ip,port,proto=""):
+            self.ebpf,self.b = create_ebpf_filter(self.lhost,self.lport) 
+            # SO_ATTACH_FILTER == 26
+            self.pcap_sock.setsockopt(socket.SOL_SOCKET, 26, self.ebpf) 
+            self.pcap_sock.bind((self.pcap_interface,0))
+
+            self.mon_flag = multiprocessing.Event() 
+
+            mon_thread = multiprocessing.Process(target = self.monitor_loop, 
+                                                           args = (self.pcap_sock,
+                                                                   self.pcapfd,
+                                                                   self.mon_flag
+                                                                   )) 
+            mon_thread.start()
+
 
 
         if self.l2_filter:
@@ -743,7 +763,7 @@ class DeceptProxy():
 
         if self.pcapfd:
             try:
-                self.pcapfd.close()                     
+                self.mon_flag.set()
             except:
                 pass
 
@@ -755,7 +775,7 @@ class DeceptProxy():
         # Constants from /usr/include/linux/if_ether.h
         # ETH_P_ALL = 0x0300
         ETH_P_ALL = 0x0300 
-        ETH_P_IP = 0x0008
+        ETH_P_IP = 0x0800
 
         LMAC = ''.join([chr(int(i,16)) for i in self.lhost.split(":")])
         RMAC = ''.join([chr(int(i,16)) for i in self.rhost.split(":")])
@@ -928,7 +948,32 @@ class DeceptProxy():
 
             
         return tmp 
-             
+
+
+    def monitor_loop(self,mon_sock,pcap_fd,kill_flag):
+        mon_sock.settimeout(self.timeout)
+        while not kill_flag.is_set():
+            try:
+                packet,addr = mon_sock.recvfrom(self.l2_mtu) 
+            
+                packlen = len(packet)
+                
+                pcap_record = pcap_record_hdr(packlen)
+                if self.snaplen < packlen:
+                    pcap_record.orig_len = self.snaplen
+                    packlen = self.snaplen 
+                
+                print "got stuff!"
+                # write headers for packet
+                pcap_fd.write(pcap_record.get_byte_array())
+                # write packet up to SNAPLEN
+                pcap_fd.write(packet[0:self.snaplen])
+            except Exception as e:
+                print e
+                pass
+                
+        pcap_fd.close()
+
 
     def inbound_handler(self,inbound,src="",dst=""):
         #write_packet_header(inbound,src,dst)
@@ -987,19 +1032,7 @@ class DeceptProxy():
 
             self.fuzzerData.messageCollection.addMessage(m)
             
-        if self.pcapfd:
-            
-            packlen = len(packet)
-            
-            pcap_record = pcap_record_hdr(packlen)
-            if self.snaplen < packlen:
-                pcap_record.orig_len = self.snaplen
-                packlen = self.snaplen 
-            
-            # write headers for packet
-            self.pcapfd.write(pcap_record.get_byte_array())
-            # write packet up to SNAPLEN
-            self.pcapfd.write(packet[0:self.snaplen])
+        
 
     def buffered_send(self,sock,data):
         send_count = 0
@@ -1147,9 +1180,13 @@ def main():
 
         #next, ints and strings that don't require processing
         proxy.timeout = float(dumb_arg_helper("--timeout",2))
+
+        # pcap options
         proxy.pcap = dumb_arg_helper("--pcap","",True)
         proxy.snaplen = int(dumb_arg_helper("--snaplen",65535)) 
         proxy.tcp_MTU = int(dumb_arg_helper("--max-packet-len",30000))
+        outbound_hook = dumb_arg_helper("--outhook")
+
         proxy.fuzz_file = dumb_arg_helper("--fuzzer","",True)  
         proxy.dumpraw = dumb_arg_helper("--dumpraw","",True) 
         proxy.l2_MTU = int(dumb_arg_helper("--mtu",1500))
@@ -1332,6 +1369,10 @@ optional arguments:
   -l, {ssl,udp,tcp}|[L3 Proto]     Local endpoint type
   -r, {ssl,udp,tcp}|[L3 Proto]     Remote endpoint type
 
+  --rbind_addr IPADDR   IP address to use for remote side. Make sure that
+                        you have the IP somewhere on an interface though.
+  --rbind_port PORT     PORT to bind to for remote side.
+
 SSL Options:
   --lcert SSL_PEM_CERT  Cert to use for accepting local SSL 
                         (Optionally cert and key in one file)
@@ -1360,6 +1401,8 @@ L2 options:
   --pcap PCAPDIR     Directory to store pcaps 
   --pps                 Create a new pcap for each session
   --snaplen SNAPLEN     Length of packet truncation
+  --pcap_interface IFACE  Specify which interface the packets will be
+                          coming in on. "eth0" by default.
 
 L4 Usage: decept.py 127.0.0.1 9999 10.0.0.1 8080
 L3 Usage: decept.py 127.0.0.1 0 10.0.0.1 0 -l icmp -r icmp 
@@ -1527,6 +1570,88 @@ def validateNumberRange(inputStr, flattenList=False):
         retList = sorted(list(set(retList)))
     return retList
 
+#########################
+# EBPF Functions
+#########################
+# 99% of this from http://allanrbo.blogspot.com/2011/12/raw-sockets-with-bpf-in-python.html
+def bpf_jump(code, k, jt, jf):
+        return struct.pack('HBBI', code, jt, jf, k)
+
+def bpf_stmt(code, k):
+    return bpf_jump(code, k, 0, 0)
+
+def create_ebpf_filter(ip,port,proto=""):
+    _ = ip.split(".")
+    binip = (int(_[0])<<24) + (int(_[1])<<16) + (int(_[2])<<8) + int(_[3])
+    
+    SRC_IP_OFFSET = 0x1A
+    DST_IP_OFFSET = 0x1E
+    SRC_PORT_OFFSET = 0x22
+    DST_PORT_OFFSET = 0x24
+
+    # Instruction classes
+    BPF_LD = 0x0 # don't bother
+    BPF_JMP = 0x05
+    BPF_RET = 0x06
+
+    # ld/ldx fields
+    LD_HALF = 0x28
+    LD_BYTE = 0x10
+    LD_WORD = 0x20
+
+    # alu/jmp fields
+    BPF_JEQ = 0x10
+    BPF_K = 0x00
+
+
+    
+    #! add macros for the jump dst : eg. PASS/FAIL
+    # Ordering of the filters is backwards of what would be intuitive for 
+    # performance reasons: the check that is most likely to fail is first.
+    filters_list = [
+        # Must have dst port == given port. Load half word at offset 0x1E in 
+        # ethernet frame at absolute byte offset 36 (BPF_ABS). If value is equal to
+        # 67 then do not jump, else jump 5 statements.
+        bpf_stmt( LD_HALF , DST_PORT_OFFSET),
+        bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, port, 0, 2),
+
+        # if dst port match, check dst IP. If good, pass
+        bpf_stmt( LD_WORD , DST_IP_OFFSET),
+        bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, binip, 6, 7),
+
+        # if not dst port, check source port
+        bpf_stmt( LD_HALF , SRC_PORT_OFFSET),
+        bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, port, 0, 5),
+        # if src port match, check src IP
+        bpf_stmt( LD_WORD , SRC_IP_OFFSET),
+        bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, binip, 2, 3),
+        
+        bpf_stmt(LD_HALF, 12), 
+        bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, 0x0800, 0, 1),
+
+        bpf_stmt(BPF_RET | BPF_K, 0x0fffffff), # pass
+        bpf_stmt(BPF_RET | BPF_K, 0), # reject
+    ]
+
+    #! TODO
+    # MUST be the chosen protocol (tcp/udp/etc)
+    '''
+    # Must be UDP (check protocol field at byte offset 23)
+    bpf_stmt(BPF_LD | BPF_B | BPF_ABS, 23), 
+    bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, 0x11, 0, 3),
+    '''
+    # Must be IPv4 (check ethertype field at byte offset 12)
+
+
+    # Create filters struct and fprog struct to be used by SO_ATTACH_FILTER, as
+    # defined in linux/filter.h.
+    filters = ''.join(filters_list)
+    b = create_string_buffer(filters)
+    mem_addr_of_filters = addressof(b)
+    fprog = struct.pack('HL', len(filters_list), mem_addr_of_filters)
+
+    # need to return both or else epbf prog is deref'ed
+    return fprog,b
 
 if __name__ == "__main__":
     main() 
