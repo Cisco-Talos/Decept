@@ -160,23 +160,28 @@ class DeceptProxy():
 
         self.local_certfile=local_cert
         self.local_keyfile=local_key
+        
+        
+        # these will get overwritten with --rkey/--rcert options
+        # if both are provided
         self.remote_certfile=local_cert
         self.remote_keyfile=local_key
         self.remote_verify=""
 
-        '''
         self.remote_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
+        self.remote_context.verify_mode = ssl.CERT_NONE
+        self.remote_context.check_hostname = False
+
+
+        ''' 
+        # Uncomment if you wanna be secure or something >_>
         self.remote_context.verify_mode = ssl.CERT_REQUIRED
+        self.remote_context.load_verify_locations("cert_chain.crt")
         self.remote_context.check_hostname = True
+        #ciphers = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305"
+        #self.remote_context.set_ciphers(ciphers)
         '''
 
-        self.remote_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-        try:
-            self.remote_context.load_verify_locations(cafile="ca.certs")
-        except Exception as e:
-            print e
-            
-        
         # on successful import, these will be the imported
         # functions "inbound_hook()" and "outbound_hook()"
         self.inbound_hook = None
@@ -392,6 +397,7 @@ class DeceptProxy():
         while True:
             if self.local_end_type in ConnectionBased:
                 csock,addr = self.server_socket.accept()
+                
 
                 #print out conn info
                 if addr:
@@ -413,6 +419,8 @@ class DeceptProxy():
                                                                    self.rport)) 
 
                 proxy_thread.start()
+                csock = None
+                addr = None
 
             elif self.local_end_type == "udp":
                 self.proxy_loop(self.server_socket,self.rhost,self.rport)
@@ -484,15 +492,34 @@ class DeceptProxy():
         # need to wait for udp...
         if self.remote_end_type == "ssl" and self.local_end_type != "udp":
             try: 
-                if self.remote_certfile: 
+                try:
                     self.remote_context.load_cert_chain(certfile=self.remote_certfile,keyfile=self.remote_keyfile)
+                    output("[!-!] Using %s and %s!"%(self.remote_certfile,self.remote_keyfile),CYAN)
+                except: 
+                    try:
+                        self.remote_context.load_cert_chain(certfile=self.remote_certfile)
+                        output("[!-!] Using %s"%(self.remote_certfile,self.remote_keyfile),CYAN)
+                    except:
+                        output("[x.x] Unable to do SSL remote, where yo' keys at?",YELLOW)
+                        sys.exit()
+
+                        
                 schro_remote = self.remote_context.wrap_socket(remote_socket) 
+                #schro_remote = self.remote_context.wrap_socket(remote_socket,server_hostname="test.com") 
+                
 
             except ssl.SSLError as e:
                 output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW)
                 output(str(e),RED)
+
                 schro_remote.close()
                 sys.exit()
+            except Exception as e:
+                output("[x.x] Assorted error, yo",YELLOW)
+                output(str(e),RED)
+                remote_socket.close()
+                sys.exit()
+
         
         # we can't really know where to send the packet yet if UDP. 
         # maybe save it till we recv? 
@@ -547,6 +574,9 @@ class DeceptProxy():
                     if self.remote_certfile: 
                         self.remote_context.load_cert_chain(certfile=self.remote_certfile,keyfile=self.remote_keyfile)
                     schro_remote = self.remote_context.wrap_socket(remote_socket) 
+                    #schro_remote = self.remote_context.wrap_socket(remote_socket,server_hostname="test.com")
+                    remote_cert = schro_remote.getpeercert()
+                    print remote_cert
 
                 except ssl.SSLError as e:
                     output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW)
@@ -612,7 +642,7 @@ class DeceptProxy():
                             else:
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
 
-                            output("[o.o] Sent %d bytes to remote (%s:%d)" % (len(buf),self.rhost,self.rport),GREEN)
+                            output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
 
                     if s == schro_remote:
                         # Case LOCAL] <= [REMOTE 
@@ -626,7 +656,7 @@ class DeceptProxy():
                                 sys.stdout.write(buf)      
                             else:   
                                 self.buffered_sendto(schro_local,buf,(self.lhost,self.lport))
-                            output("[o.o] Sent %d bytes to local (%s:%d)" % (len(buf),self.lhost,self.lport),CYAN)
+                            output("[o.o] Sent %d bytes to local (%s:%d)\n" % (len(buf),self.lhost,self.lport),CYAN)
                             resp_count+=1
 
                     try: #udp port range case
@@ -636,7 +666,7 @@ class DeceptProxy():
                                 self.pkt_count+=1
                                 active_udp = s # so we know where to throw packets back to 
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
-                                output("[o.o] Sent %d bytes to remote (%s:%d)" % (len(buf),self.rhost,self.rport),GREEN)
+                                output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
                              
                     except Exception as e:
                         pass
@@ -1087,9 +1117,16 @@ def main():
         proxy.rbind_port = int(dumb_arg_helper("--rbind_port",0)) 
         proxy.udp_port_range = dumb_arg_helper("--udppr")
 
-        #ssl params, if needed
-        proxy.remote_keyfile = dumb_arg_helper("--rkey")
-        proxy.remote_certfile = dumb_arg_helper("--rcert")
+        #remote ssl params, if needed.
+        tmp_key = dumb_arg_helper("--rkey")
+        tmp_cert = dumb_arg_helper("--rcert")
+        if (tmp_key and tmp_cert) or tmp_cert:
+            proxy.remote_keyfile = tmp_key 
+            proxy.remote_certfile = tmp_cert 
+       
+        
+
+
         proxy.remote_verify = dumb_arg_helper("--rverify")
         
 
