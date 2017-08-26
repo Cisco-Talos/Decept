@@ -76,11 +76,6 @@ DEBUGGING = False
 if '-d' in sys.argv:
     DEBUGGING = True
 
-try:
-    sys.path.append(join("..","mutiny_fuzzing_framework")) 
-    import backend.fuzzerdata as mutiny
-except ImportError:
-    pass
     
 # minor hack to get decept to run on osx 
 if "darwin" in system().lower():
@@ -169,19 +164,8 @@ class DeceptProxy():
         self.remote_verify=""
 
         self.remote_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-        self.remote_context.verify_mode = ssl.CERT_NONE
-        self.remote_context.check_hostname = False
 
-
-        ''' 
-        # Uncomment if you wanna be secure or something >_>
-        self.remote_context.verify_mode = ssl.CERT_REQUIRED
-        self.remote_context.load_verify_locations("cert_chain.crt")
-        self.remote_context.check_hostname = True
-        #ciphers = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305"
-        #self.remote_context.set_ciphers(ciphers)
-        '''
-
+        
         # on successful import, these will be the imported
         # functions "inbound_hook()" and "outbound_hook()"
         self.inbound_hook = None
@@ -357,6 +341,18 @@ class DeceptProxy():
     
     def server_loop(self):
 
+        # make sure our ssl context is set appropriately
+        if self.remote_verify:
+            self.remote_context.verify_mode = ssl.CERT_REQUIRED
+            # should prob add an option for cer file...
+            #self.remote_context.load_verify_locations("cert_chain.crt")
+            self.remote_context.check_hostname = True
+            #ciphers = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305"
+            #self.remote_context.set_ciphers(ciphers)
+        else:
+            self.remote_context.verify_mode = ssl.CERT_NONE
+            self.remote_context.check_hostname = False
+
         # prep for dumping raw datagrams
         if self.dumpraw:
             try:
@@ -484,7 +480,7 @@ class DeceptProxy():
             try:
                 schro_local = self.server_context.wrap_socket(local_socket, server_side=True)  
             except ssl.SSLError as e:
-                output("[x.x] Unable to do SSL local. Did you send a non-SSL request?",YELLOW)
+                output("[x.x] Unable to wrap local SSL socket.",YELLOW)
                 output(str(e),RED)
                 schro_local.close()
                 sys.exit()
@@ -501,17 +497,27 @@ class DeceptProxy():
                         output("[!-!] Using %s"%(self.remote_certfile,self.remote_keyfile),CYAN)
                     except:
                         output("[x.x] Unable to do SSL remote, where yo' keys at?",YELLOW)
+                        output("[!-!] Using cert %s and key %s!"%(self.remote_certfile,self.remote_keyfile),CYAN)
                         sys.exit()
 
                         
-                schro_remote = self.remote_context.wrap_socket(remote_socket) 
-                #schro_remote = self.remote_context.wrap_socket(remote_socket,server_hostname="test.com") 
+
+                if self.remote_verify:
+                    try: 
+                        schro_remote = self.remote_context.wrap_socket(remote_socket,server_hostname=self.remote_verify) 
+                    except Exception as e:
+                        output("[x.x] Unable to verify remote host as '%s' "%self.remote_verify,YELLOW)
+                        output(str(e),RED)
+                        schro_remote.close()
+                        sys.exit()
+
+                else:
+                    schro_remote = self.remote_context.wrap_socket(remote_socket) 
                 
 
             except ssl.SSLError as e:
                 output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW)
                 output(str(e),RED)
-
                 schro_remote.close()
                 sys.exit()
             except Exception as e:
@@ -568,15 +574,21 @@ class DeceptProxy():
         
             if self.remote_end_type != "udp":
                 remote_socket.connect((rhost,rport))
+
             if self.remote_end_type == "ssl":
                 try: 
-
+                    
                     if self.remote_certfile: 
                         self.remote_context.load_cert_chain(certfile=self.remote_certfile,keyfile=self.remote_keyfile)
-                    schro_remote = self.remote_context.wrap_socket(remote_socket) 
-                    #schro_remote = self.remote_context.wrap_socket(remote_socket,server_hostname="test.com")
-                    remote_cert = schro_remote.getpeercert()
-                    print remote_cert
+
+                    if self.remote_verify:
+                        schro_remote = self.remote_context.wrap_socket(remote_socket,server_hostname=self.remote_verify) 
+                    else:
+                        schro_remote = self.remote_context.wrap_socket(remote_socket) 
+
+                    
+                    #remote_cert = schro_remote.getpeercert()
+                    #print remote_cert
 
                 except ssl.SSLError as e:
                     output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW)
@@ -1126,7 +1138,6 @@ def main():
        
         
 
-
         proxy.remote_verify = dumb_arg_helper("--rverify")
         
 
@@ -1282,10 +1293,25 @@ optional arguments:
                         (fmt = %d-%s % (pkt_num,[inbound|outbound]))
   --max-packet-len LEN  Max amount of data per packet when sending data
   --dont_kill           For when you don't want the connection to die if
-                        neither side sends packets for TIMEOUT seconds
-
+                        neither side sends packets for TIMEOUT seconds.
+                        Use with --expect if you still need the session 
+                        to end though.
+  --expect RESPCOUNT    Useful with --dont_kill. Wait for RESPCOUNT 
+                        responses from the remote server, and then kill
+                        the connection. Good for fuzzing campaigns.
+                         
   -l, {ssl,udp,tcp}|[L3 Proto]     Local endpoint type
   -r, {ssl,udp,tcp}|[L3 Proto]     Remote endpoint type
+
+SSL Options:
+  --lcert SSL_PEM_CERT  Cert to use for accepting local SSL 
+                        (Optionally cert and key in one file)
+  --lkey SSL_PEM_KEY    Private key for local cert
+  --rcert SSL_PEM_CERT  Cert to use for connecting to remote SSL 
+                        (Optionally cert and key in one file)
+  --rkey SSL_PEM_KEY    Private key for remote cert
+  --rverify HOSTNAME    Verify remote side as host HOSTNAME before
+                        connecting. 
 
 Hook Files:
   Optional function definitions for processing data between inbound
@@ -1321,6 +1347,7 @@ ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
                        "--L3_raw","--inhook","--outhook",
                        "--rbind_addr","--rbind_port",
                        "--quiet","--dont_kill","--udppr",
+                       "--expect",
                        "--lcert","--lkey","--rcert","--rkey",
                        "--rverify"]
 
