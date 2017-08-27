@@ -150,6 +150,7 @@ class DeceptProxy():
 
         self.pcap = ""
         self.pcap_file = ""
+        self.pcapfd = None
         self.pps = False
         self.snaplen = 65535
         self.pcap_interface = "eth0"
@@ -182,9 +183,9 @@ class DeceptProxy():
                 else:
                     self.server_context.load_cert_chain(certfile=self.local_certfile)
             except Exception as e:
-                print e
                 output("[x.x] Please generate keys before attempting to proxy ssl",RED)
                 output("[-_-] Protip: openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -nodes",CYAN)
+                output("[>_>] %s"%e,RED)
                 sys.exit(0)
 
     def shutdown(self):
@@ -256,7 +257,7 @@ class DeceptProxy():
             return ret_socket
 
         elif match(r'([0-9A-Fa-f]{0,4}:?)(:[0-9A-Fa-f]{1,4}:?)+',host) and host.find("::") == host.rfind("::"):
-            print repr(host)
+            #print repr(host)
             s_fam = socket.AF_INET6 
         
         else:
@@ -379,7 +380,7 @@ class DeceptProxy():
 
                 import tempfile
                 try:
-                    self.pcapfd = open(join(self.pcapdir,self.pcap),"wb") 
+                    self.pcapfd = open(join(self.pcapdir,self.pcap),"wb",0) 
                     self.pcapfd.write((pcap_global_hdr().get_byte_array()))
                 except Exception as e:
                     # why isn't this behaving as  the docs describe?
@@ -388,18 +389,23 @@ class DeceptProxy():
                     output(e,YELLOW)
                     self.pcap = tempfile.mkstemp(suffix=".pcap",dir=self.pcapdir) 
                     output("[i.i] Couldnt tmp pcap file %s instead!"%(self.pcap[1]),CYAN) 
-                    self.pcapfd = open(self.pcap[1],"wb")
+                    self.pcapfd = open(self.pcap[1],"wb",0)
+                    self.pcapfd.write((pcap_global_hdr().get_byte_array()))
             else:
                 # if it does exist, just append packets
-                self.pcapfd = open(join(self.pcapdir,self.pcap),"ab") 
+                 
+                self.pcapfd = open(join(self.pcapdir,self.pcap),"ab",0) 
 
 
             #### Set up a promiscuous monitor socket such that we can actually get more than raw data.
             #### ETH_P_IP = 0x0800
+            #### ETH_P_ALL = 0x0300
+            
             self.pcap_sock = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x0300)
             
             ### Set up our EBPF prog #### def create_ebpf_filter(ip,port,proto=""):
             self.ebpf,self.b = create_ebpf_filter(self.lhost,self.lport) 
+            #print "[^_^] ebpf: %s\n%s" % (repr(self.ebpf), self.b)
             # SO_ATTACH_FILTER == 26
             self.pcap_sock.setsockopt(socket.SOL_SOCKET, 26, self.ebpf) 
             self.pcap_sock.bind((self.pcap_interface,0))
@@ -469,6 +475,14 @@ class DeceptProxy():
                 output("[>.>] L2 ready: %s:%s <=> %s:%s" % (str(self.lhost),str(self.lport),str(self.rhost),str(self.rport)),YELLOW) 
 
                 self.raw_proxy_loop(self.rhost,self.rport)
+
+
+        
+        if self.pcapfd:
+            try:
+                self.mon_flag.set()
+            except:
+                pass
 
 
     def proxy_loop(self,local_socket,rhost,rport):
@@ -761,11 +775,6 @@ class DeceptProxy():
                 output(str(e),YELLOW)
                 output("[-.-] Couldn't write fuzz data. Where's Mutiny?",RED)
 
-        if self.pcapfd:
-            try:
-                self.mon_flag.set()
-            except:
-                pass
 
 
     # will need to filter frames based on mac addresses. 
@@ -955,19 +964,25 @@ class DeceptProxy():
         while not kill_flag.is_set():
             try:
                 packet,addr = mon_sock.recvfrom(self.l2_mtu) 
-            
+                output("got stuff!",GREEN)
                 packlen = len(packet)
                 
+                #print "Packlen: %d" % packlen
                 pcap_record = pcap_record_hdr(packlen)
+
                 if self.snaplen < packlen:
-                    pcap_record.orig_len = self.snaplen
+                    #pcap_record.orig_len = self.snaplen
                     packlen = self.snaplen 
                 
-                print "got stuff!"
+                   
                 # write headers for packet
-                pcap_fd.write(pcap_record.get_byte_array())
+                packet_header = pcap_record.get_byte_array()
+                pcap_fd.write(packet_header)
+                #print "writing! %s " % packet_header
                 # write packet up to SNAPLEN
                 pcap_fd.write(packet[0:self.snaplen])
+                #print "writing! %s " % repr(packet[0:self.snaplen])
+
             except Exception as e:
                 print e
                 pass
@@ -1182,7 +1197,7 @@ def main():
         proxy.timeout = float(dumb_arg_helper("--timeout",2))
 
         # pcap options
-        proxy.pcap = dumb_arg_helper("--pcap","",True)
+        proxy.pcap = dumb_arg_helper("--pcap",".")
         proxy.snaplen = int(dumb_arg_helper("--snaplen",65535)) 
         proxy.tcp_MTU = int(dumb_arg_helper("--max-packet-len",30000))
         outbound_hook = dumb_arg_helper("--outhook")
@@ -1518,6 +1533,7 @@ def pcap_record_hdr(packet_len):
     sec = int(epoch[0]) 
     usec = int(epoch[1]) 
     pack_len = packet_len 
+
     orig_len = packet_len 
 
     pcap_record = pcaprec_hdr_t(sec,usec,pack_len,orig_len)
@@ -1549,7 +1565,7 @@ def validateNumberRange(inputStr, flattenList=False):
                 intRange = num.split('-')
                 # Invalid x-y-z
                 if len(intRange) > 2:
-                    print "Invalid range given"
+                    #print "Invalid range given"
                     return None
                 try:
                     if not flattenList:
@@ -1559,10 +1575,10 @@ def validateNumberRange(inputStr, flattenList=False):
                         # Append individual elements
                         retList.extend(range(int(intRange[0]),int(intRange[1])+1))
                 except TypeError:
-                    print "Invalid range given"
+                    #print "Invalid range given"
                     return None
             else:
-                print "Invalid number given"
+                #print "Invalid number given"
                 return None
     # All elements in the range are valid integers or integer ranges
     if flattenList:
@@ -1574,6 +1590,7 @@ def validateNumberRange(inputStr, flattenList=False):
 # EBPF Functions
 #########################
 # 99% of this from http://allanrbo.blogspot.com/2011/12/raw-sockets-with-bpf-in-python.html
+# https://www.kernel.org/doc/Documentation/networking/filter.txt
 def bpf_jump(code, k, jt, jf):
         return struct.pack('HBBI', code, jt, jf, k)
 
@@ -1581,8 +1598,10 @@ def bpf_stmt(code, k):
     return bpf_jump(code, k, 0, 0)
 
 def create_ebpf_filter(ip,port,proto=""):
+    
     _ = ip.split(".")
     binip = (int(_[0])<<24) + (int(_[1])<<16) + (int(_[2])<<8) + int(_[3])
+    output("EBPF filter for 0x%x:%d"%(binip,port))
     
     SRC_IP_OFFSET = 0x1A
     DST_IP_OFFSET = 0x1E
@@ -1591,47 +1610,69 @@ def create_ebpf_filter(ip,port,proto=""):
 
     # Instruction classes
     BPF_LD = 0x0 # don't bother
+    BPF_ABS = 0x20
+
+    LOAD = BPF_LD | BPF_ABS 
+
     BPF_JMP = 0x05
     BPF_RET = 0x06
 
     # ld/ldx fields
-    LD_HALF = 0x28
-    LD_BYTE = 0x10
-    LD_WORD = 0x20
+    BPF_WORD = 0x0
+    BPF_SHORT = 0x8
+    BPF_BYTE = 0x10
+    BPF_DWORD = 0x18 
 
     # alu/jmp fields
     BPF_JEQ = 0x10
     BPF_K = 0x00
+    
+    LOAD_WORD = LOAD | BPF_WORD
+    LOAD_SHORT = LOAD | BPF_SHORT
+    LOAD_BYTE = LOAD | BPF_BYTE
+    LOAD_DWORD = LOAD | BPF_DWORD
+    
 
-
+    #(BPF_ABS | <size> | BPF_LD) 
     
     #! add macros for the jump dst : eg. PASS/FAIL
     # Ordering of the filters is backwards of what would be intuitive for 
     # performance reasons: the check that is most likely to fail is first.
+
     filters_list = [
-        # Must have dst port == given port. Load half word at offset 0x1E in 
-        # ethernet frame at absolute byte offset 36 (BPF_ABS). If value is equal to
-        # 67 then do not jump, else jump 5 statements.
-        bpf_stmt( LD_HALF , DST_PORT_OFFSET),
+        bpf_stmt( LOAD_SHORT , DST_PORT_OFFSET),
         bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, port, 0, 2),
 
         # if dst port match, check dst IP. If good, pass
-        bpf_stmt( LD_WORD , DST_IP_OFFSET),
+        bpf_stmt( LOAD_WORD , DST_IP_OFFSET),
         bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, binip, 6, 7),
 
         # if not dst port, check source port
-        bpf_stmt( LD_HALF , SRC_PORT_OFFSET),
+        bpf_stmt( LOAD_SHORT , SRC_PORT_OFFSET),
         bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, port, 0, 5),
+
         # if src port match, check src IP
-        bpf_stmt( LD_WORD , SRC_IP_OFFSET),
+        bpf_stmt( LOAD_WORD , SRC_IP_OFFSET),
         bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, binip, 2, 3),
         
-        bpf_stmt(LD_HALF, 12), 
+        #ethertype check
+        bpf_stmt( LOAD_SHORT, 12), 
         bpf_jump(BPF_JMP | BPF_JEQ | BPF_K, 0x0800, 0, 1),
 
-        bpf_stmt(BPF_RET | BPF_K, 0x0fffffff), # pass
+        bpf_stmt(BPF_RET | BPF_K, 0xffffffff), # pass
         bpf_stmt(BPF_RET | BPF_K, 0), # reject
     ]
+
+    '''
+    # testing 
+    filters_list = [
+        bpf_stmt( LOAD_WORD , DST_IP_OFFSET),
+        bpf_jump( BPF_JMP | BPF_JEQ | BPF_K, binip, 0, 1),
+
+        bpf_stmt(BPF_RET | BPF_K,  0xffffffff), 
+        bpf_stmt(BPF_RET | BPF_K, 0), # reject
+    ]
+    '''
 
     #! TODO
     # MUST be the chosen protocol (tcp/udp/etc)
