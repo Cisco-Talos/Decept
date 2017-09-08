@@ -72,6 +72,16 @@ from os.path import join,isfile
 from platform import system
 from os import mkdir,getcwd,remove
 
+try:
+    sys.path.append(join("..","mutiny_fuzzing_framework")) 
+    import backend.fuzzerdata as mutiny
+except ImportError:
+    try:
+        sys.path.append(join("..","mutiny")) 
+        import backend.fuzzerdata as mutiny
+    except ImportError:
+        pass
+
 DEBUGGING = False
 if '-d' in sys.argv:
     DEBUGGING = True
@@ -1034,8 +1044,10 @@ class DeceptProxy():
 
         if self.fuzzerData:
             m = mutiny.Message()
-            m.direction = direction
-            # 2 == raw
+            if direction == 0:
+                m.direction = "outbound"
+            elif direction == 1:
+                m.direction = "inbound"
             try:
                 fuzz=False
                 if len(self.fuzzerData.messageCollection.messages) == 0:
@@ -1197,7 +1209,7 @@ def main():
         proxy.timeout = float(dumb_arg_helper("--timeout",2))
 
         # pcap options
-        proxy.pcap = dumb_arg_helper("--pcap",".")
+        proxy.pcap = dumb_arg_helper("--pcap")
         proxy.snaplen = int(dumb_arg_helper("--snaplen",65535)) 
         proxy.tcp_MTU = int(dumb_arg_helper("--max-packet-len",30000))
         outbound_hook = dumb_arg_helper("--outhook")
