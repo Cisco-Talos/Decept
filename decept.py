@@ -1049,10 +1049,10 @@ class DeceptProxy():
             elif direction == 1:
                 m.direction = "inbound"
             try:
-                fuzz=False
                 if len(self.fuzzerData.messageCollection.messages) == 0:
-                    fuzz=True
-                m.setMessageFrom(sourceType=2,message=packet,isFuzzed=fuzz)
+                    m.appendMessageFrom(sourceType=2,message=packet,attributes="fuzz")
+                else:
+                    m.appendMessageFrom(sourceType=2,message=packet,attributes="")
             except:
                 #older verison of mutiny
                 m.message = bytearray(packet)
