@@ -1055,7 +1055,10 @@ class DeceptProxy():
                     m.appendMessageFrom(sourceType=2,message=packet,attributes="")
             except:
                 #older verison of mutiny
-                m.message = bytearray(packet)
+                if len(self.fuzzerData.messageCollection.messages) == 0:
+                    m.setMessageFrom(sourceType=2,message=packet,isFuzzed=True)
+                else:
+                    m.appendMessageFrom(sourceType=2,message=packet,isFuzzed=False)
 
             self.fuzzerData.messageCollection.addMessage(m)
             
