@@ -67,16 +67,16 @@ except:
 from ctypes import *
 from re import match
 from time import time
-from os.path import join,isfile
+from os.path import join,isfile,abspath
 from platform import system
 from os import mkdir,getcwd,remove
 
 try:
-    sys.path.append(join("..","mutiny_fuzzing_framework")) 
+    sys.path.append(abspath(join(__file__,"../../mutiny_fuzzing_framework"))) 
     import backend.fuzzerdata as mutiny
 except ImportError:
     try:
-        sys.path.append(join("..","mutiny")) 
+        sys.path.append(abspath(join(__file__, "../../mutiny-fuzzer"))) 
         import backend.fuzzerdata as mutiny
     except ImportError:
         pass
