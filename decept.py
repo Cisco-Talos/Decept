@@ -2,29 +2,21 @@
 #------------------------------------------------------------------
 # Author: Lilith Wyatt <(^,^)>
 #------------------------------------------------------------------
-# November 2015, created within ASIG
-# Author: Lilith Wyatt (liwyatt)  
-#
-# This is the main proxy, Decept (formerly sadsoxxy [;.;]) 
-# Created with portability in mind, so you can set it and 
-# forget it, only uses as standard python libraries as 
-# possible.
+# This is the main proxy, Decept Created with portability in mind, 
+# so you can set it and forget it, only uses as standard python libraries 
+# as possible.
 #
 # Can dump .fuzzer files too if you have mutiny_fuzzing_framework
-# in an adjecent directory (i.e. ../mutiny_fuzzing_framework)
+# in an adjecent directory (i.e. ../mutiny_fuzzing_framework || ../mutiny)
 #
-# Based off of the tcp proxy.py from Black Hat Python by Justin Seitz
+# Initial idea/base from tcp proxy.py (Black Hat Python by Justin Seitz)
 #
 # Feature List:
-# - SSL support
+# - SSL/IPv6/Unix/abstract/dtls socket support
 # - Pcap dumping (sorta hacky)
-# - IPV6/Unix_socket/Abstract support
 # - fuzzer file dumping for Mutiny
-# - Dumb args mode (portability,argparse removed)
-# - polling w/select
 # - L3 captures/proxying
 # - L2 captures/proxying
-# - UDP currently busted, lol
 #------------------------------------------------------------------
 # Copyright (c) 2015-2017 by Cisco Systems, Inc.
 # All rights reserved.
@@ -62,6 +54,13 @@ import multiprocessing
 try:
     # windows 
     import fcntl 
+except:
+    pass
+
+try:
+    # dtls
+    from OpenSSL import SSL
+    from OpenSSL import _util
 except:
     pass
 
@@ -105,7 +104,9 @@ class DeceptProxy():
         self.receive_first = receive_first
         self.local_end_type = local_end_type
         self.remote_end_type = remote_end_type
-        self.conn = True if "udp" not in local_end_type else False 
+        self.conn = True 
+        if "udp" or "dtls" in local_end_type:
+            self.conn = False 
         self.protocol_blueprints = None
         self.pkt_count = 0
         self.max_conns = 5
@@ -177,7 +178,8 @@ class DeceptProxy():
         self.remote_verify=""
 
         self.remote_context = ssl.SSLContext(ssl.PROTOCOL_SSLv23)
-
+        self.remote_context.verify_mode = ssl.CERT_NONE
+        self.remote_context.check_hostname = False
         
         # on successful import, these will be the imported
         # functions "inbound_hook()" and "outbound_hook()"
@@ -198,6 +200,38 @@ class DeceptProxy():
                 output("[>_>] %s"%e,RED)
                 sys.exit(0)
 
+        elif self.local_end_type  == "dtls":
+            # DTLS made possible by smarter people than I, thank you Mr. Concolato ^_^; 
+            #https://stackoverflow.com/questions/27383054/python-importerror-usr-local-lib-python2-7-lib-dynload-io-so-undefined-symb
+            try:
+                DTLSv1_server_method = 7 
+                SSL.Context._methods[DTLSv1_server_method] = _util.lib.DTLSv1_server_method
+            except:
+                output("[x.x] Unable to import OpenSSL for DTLS!",RED) 
+                output("[-_-] Please install `apt-get install python-openssl` or `pip install PyOpenSSL`",RED) 
+            try:
+                self.server_context = SSL.Context(DTLSv1_server_method)
+                if self.local_keyfile:
+                    self.server_context.use_privatekey_file(self.local_keyfile)
+                if self.local_certfile:
+                    self.server_context.use_certificate_file(self.local_certfile)
+            except Exception as e:
+                output("[x.x] Please generate keys before attempting to proxy DTLS",RED)
+                output("[-_-] Protip: openssl req -x509 -newkey rsa:2048 -keyout key.pem -out cert.pem -nodes",CYAN)
+                output("[>_>] %s"%e,RED)
+                sys.exit(0)
+
+
+        if self.remote_end_type == "dtls":
+            DTLSv1_client_method = 8 
+            SSL.Context._methods[DTLSv1_client_method] = _util.lib.DTLSv1_client_method
+            self.remote_context = SSL.Context(DTLSv1_client_method)
+    
+
+###########################################################
+##End Decept() __init__()##################################
+###########################################################
+
     def shutdown(self):
         if self.local_end_type in ConnectionBased:
             server_kill = self.socket_plinko(self.lhost,self.local_end_type)
@@ -216,6 +250,8 @@ class DeceptProxy():
 
     def get_bytes(self,sock):
         ret = ""
+        retip = ""
+        retport = -1
         sock.settimeout(self.timeout)
         try: 
             while True:
@@ -223,17 +259,27 @@ class DeceptProxy():
                     tmp = sock.recv(65535)  
                 else:
                     # necessary for connectionless
-                    tmp,(_,tmpport) = sock.recvfrom(65535) 
-                    if tmpport != self.lport and tmpport != self.rport and not self.srcport: 
-                        self.lport = tmpport
-                        self.lhost = _
+
+                    if self.local_end_type == "udp":
+                        tmp,(_,tmpport) = sock.recvfrom(65535) 
+                        if tmpport != self.lport and tmpport != self.rport and not self.srcport: 
+                            self.lport = tmpport
+                            self.lhost = _
+                    elif self.local_end_type == "dtls":
+                        tmp,(retip,retport) = sock.recvfrom(65535)
+                       
+
+
                 if len(tmp): 
                     ret+=tmp
                 else:
                     break
         except Exception as e:
-            #output(str(e),YELLOW)
+            output(str(e),YELLOW)
             pass
+    
+        if retip and (retport >= 0): 
+            return (ret,retip,retport)
 
         return ret 
 
@@ -273,6 +319,7 @@ class DeceptProxy():
         else:
             s_fam = socket.AF_UNIX  
         
+
         if endpoint in ConnectionBased:
             ret_socket = socket.socket(s_fam,socket.SOCK_STREAM)
             ret_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
@@ -283,8 +330,9 @@ class DeceptProxy():
                 ret_socket.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,1)
             return ret_socket
 
-        elif "udp" in endpoint: 
+        elif "udp" in endpoint or "dtls" in endpoint: 
             ret_socket =  socket.socket(s_fam,socket.SOCK_DGRAM)
+            ret_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
             
             if self.L3_raw:
                 ret_socket.setsockopt(socket.IPPROTO_IP,socket.IP_HDRINCL,1)
@@ -357,16 +405,13 @@ class DeceptProxy():
     
     def server_loop(self):
         # make sure our ssl context is set appropriately
-        if self.remote_verify:
+        if self.remote_verify and self.remote_end_type == "ssl":
             self.remote_context.verify_mode = ssl.CERT_REQUIRED
             # should prob add an option for cer file...
             #self.remote_context.load_verify_locations("cert_chain.crt")
             self.remote_context.check_hostname = True
             #ciphers = "ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-ECDSA-CHACHA20-POLY1305"
             #self.remote_context.set_ciphers(ciphers)
-        else:
-            self.remote_context.verify_mode = ssl.CERT_NONE
-            self.remote_context.check_hostname = False
 
         # prep for dumping raw datagrams
         if self.dumpraw:
@@ -473,7 +518,7 @@ class DeceptProxy():
                 csock = None
                 addr = None
 
-            elif self.local_end_type == "udp":
+            elif self.local_end_type == "udp" or self.local_end_type == "dtls":
                 self.proxy_loop(self.server_socket,self.rhost,self.rport)
                 self.exit_triggers()
                 return
@@ -519,7 +564,7 @@ class DeceptProxy():
                     
         try:
             if self.remote_end_type in ConnectionBased:
-                if self.local_end_type == "udp" and not self.receive_first:
+                if (self.local_end_type == "udp" or self.local_end_type == "dtls") and not self.receive_first:
                     # we need to wait for data before we connect.
                     pass
                 elif "windows" in system().lower() or "cygwin" in system().lower():
@@ -547,6 +592,15 @@ class DeceptProxy():
                 output(str(e),RED)
                 schro_local.close()
                 sys.exit()
+        elif self.local_end_type == "dtls":
+             try:
+                schro_local = SSL.Connection(self.server_context,local_socket) 
+             except Exception as e:
+                output("[x.x] Unable to wrap local DTLS socket.",YELLOW)
+                output(str(e),RED)
+                schro_local.close()
+                sys.exit()
+
         
         # need to wait for udp...
         if self.remote_end_type == "ssl" and self.local_end_type != "udp":
@@ -589,7 +643,19 @@ class DeceptProxy():
                 remote_socket.close()
                 sys.exit()
 
-        
+        #!Todo: add DTLS verification
+        if self.remote_end_type == "dtls" and self.local_end_type != "udp":
+            try:
+                schro_remote = SSL.Connection(self.remote_context,remote_socket)      
+                schro_remote.set_connect_state()
+                schro_remote.connect((rhost,rport))
+                schro_remote.do_handshake()
+            except Exception as e:
+                output("[x.x] DTLS error, yo",YELLOW)
+                output(str(e),RED)
+                remote_socket.close()
+                sys.exit()
+                
         # we can't really know where to send the packet yet if UDP. 
         # maybe save it till we recv? 
         if self.receive_first and self.local_end_type in ConnectionBased:
@@ -607,7 +673,7 @@ class DeceptProxy():
                 else:   
                     self.buffered_sendto(schro_local,remote_buffer,(self.lhost,self.lport))
         
-        elif not self.receive_first and self.local_end_type == "udp":
+        elif not self.receive_first and (self.local_end_type == "udp" or self.local_end_type == "dtls"):
             # [>_>] port range is going to override schro_local, cuz I'm lazy
             if self.udp_port_range:
                     
@@ -658,6 +724,20 @@ class DeceptProxy():
                     output(str(e),RED)
                     schro_remote.close()
                     sys.exit()
+
+            
+            if self.remote_end_type == "dtls":
+                try:
+                    schro_remote = SSL.Connection(self.remote_context,remote_socket)
+                    schro_remote.set_connect_state()
+                    schro_remote.connect((rhost,rport))
+                    schro_remote.do_handshake()
+                except Exception as e:
+                    output("[x.x] DTLS error, yo",YELLOW)
+                    output(str(e),RED)
+                    remote_socket.close()
+                    sys.exit()
+
                  
 
         buf = ""
@@ -665,6 +745,11 @@ class DeceptProxy():
         active_udp = None
         schro_list = []
         resp_count = 0 
+        # for DTLS
+        remote_sock = None
+        remote_host = None
+        remote_port = -1
+        handshake_flag = False
 
         try:
             schro_list = schro_local[:] 
@@ -691,10 +776,17 @@ class DeceptProxy():
                 
                 # if there's any sockets ready to read, get data
                 for s in readable:
-                    try:
-                        buf = self.get_bytes(s)
-                    except Exception as e: 
-                        raise
+                    if self.local_end_type == "dtls" and s == schro_local:
+                        if not handshake_flag:
+                            s.set_connect_state()
+                            handshake_flag = True
+                        else:
+                            buf,remote_host,remote_port = self.get_bytes(s) 
+                    else:
+                        try:
+                            buf = self.get_bytes(s)
+                        except Exception as e: 
+                            raise
 
                     byte_count += len(buf)
 
@@ -708,6 +800,7 @@ class DeceptProxy():
                         # Case LOCAL] => [REMOTE
                         buf = self.outbound_handler(buf,self.lhost,self.rhost) 
                         if len(buf):
+                            output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
                             self.pkt_count+=1
 
                             if self.remote_end_type in ConnectionBased:
@@ -1372,7 +1465,7 @@ class ETH(Structure):
 
 # End Raw Socket Structs
 
-ValidEndpoints = ["ssl","udp","tcp","bridge","passive","stdin","stdout","unix"]
+ValidEndpoints = ["ssl","udp","tcp","bridge","passive","stdin","stdout","unix","dtls"]
 ConnectionBased = ["ssl","tcp"]
 
 usage = '''
@@ -1443,7 +1536,7 @@ Abstract: decept.py \\x00localsocketname 0 \\x00remotesocketname 0
 '''
 
 ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
-                       "--udp","--pcap","--pps","--snaplen",
+                       "--pcap","--pps","--snaplen",
                        "--fuzzer","--dumpraw","-l","-r",
                        "--l2_filter","--l2_mtu","--L2_forward", 
                        "--L3_raw","--inhook","--outhook",
