@@ -105,7 +105,7 @@ class DeceptProxy():
         self.local_end_type = local_end_type
         self.remote_end_type = remote_end_type
         self.conn = True 
-        if "udp" or "dtls" in local_end_type:
+        if "udp" in local_end_type or "dtls" in local_end_type:
             self.conn = False 
         self.protocol_blueprints = None
         self.pkt_count = 0
@@ -255,6 +255,7 @@ class DeceptProxy():
         sock.settimeout(self.timeout)
         try: 
             while True:
+                tmp = ""
                 if self.conn:
                     tmp = sock.recv(65535)  
                 else:
@@ -268,8 +269,6 @@ class DeceptProxy():
                     elif self.local_end_type == "dtls":
                         tmp,(retip,retport) = sock.recvfrom(65535)
                        
-
-
                 if len(tmp): 
                     ret+=tmp
                 else:
