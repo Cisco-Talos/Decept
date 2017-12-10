@@ -105,6 +105,10 @@ class DeceptProxy():
         self.local_end_type = local_end_type
         self.remote_end_type = remote_end_type
         self.conn = True 
+        if "dtls" in local_end_type:
+            output("Local DTLS sockets not supported yet, sorry (^_^);;;")
+            sys.exit()
+            
         if "udp" in local_end_type or "dtls" in local_end_type:
             self.conn = False 
         self.protocol_blueprints = None
@@ -777,7 +781,9 @@ class DeceptProxy():
                 for s in readable:
                     if self.local_end_type == "dtls" and s == schro_local:
                         if not handshake_flag:
-                            s.set_connect_state()
+                            s.set_accept_state()
+                            print dir(s)
+                            s.do_handshake()
                             handshake_flag = True
                         else:
                             buf,remote_host,remote_port = self.get_bytes(s) 
@@ -793,13 +799,12 @@ class DeceptProxy():
                         hexdump(buf)
 
                     # readable socket w/no data => closed connection  
-                                    # if there's data, perform appropriate handlers, and then send 
+                    # if there's data, perform appropriate handlers, and then send 
                     # Need to see which direction first though
                     if s == schro_local:
                         # Case LOCAL] => [REMOTE
                         buf = self.outbound_handler(buf,self.lhost,self.rhost) 
                         if len(buf):
-                            output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
                             self.pkt_count+=1
 
                             if self.remote_end_type in ConnectionBased:

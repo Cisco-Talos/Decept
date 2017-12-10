@@ -7,3 +7,4 @@ id_rsa
 id_rsa.pub
 logs/*
 .gitignore
+tests/
