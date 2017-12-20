@@ -213,6 +213,7 @@ class DeceptProxy():
             except:
                 output("[x.x] Unable to import OpenSSL for DTLS!",RED) 
                 output("[-_-] Please install `apt-get install python-openssl` or `pip install PyOpenSSL`",RED) 
+
             try:
                 self.server_context = SSL.Context(DTLSv1_server_method)
                 if self.local_keyfile:
@@ -278,7 +279,7 @@ class DeceptProxy():
                 else:
                     break
         except Exception as e:
-            output(str(e),YELLOW)
+            #output(str(e),YELLOW)
             pass
     
         if retip and (retport >= 0): 
