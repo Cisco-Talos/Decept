@@ -950,6 +950,7 @@ class DeceptProxy():
         if self.local_end_type=="bridge":
             sock_list.append(self.server_socket)
 
+        #!TODO: clean up this cluster w/ebpf
         while True:
             buff = ""
             try:
@@ -1072,7 +1073,7 @@ class DeceptProxy():
         while not kill_flag.is_set():
             try:
                 packet,addr = mon_sock.recvfrom(self.l2_mtu) 
-                output("got stuff!",GREEN)
+                #output("got stuff!",GREEN)
                 packlen = len(packet)
                 
                 #print "Packlen: %d" % packlen
@@ -1092,7 +1093,7 @@ class DeceptProxy():
                 #print "writing! %s " % repr(packet[0:self.snaplen])
 
             except Exception as e:
-                print e
+                #print e
                 pass
                 
         pcap_fd.close()
