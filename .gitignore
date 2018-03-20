@@ -8,3 +8,5 @@ id_rsa.pub
 logs/*
 .gitignore
 tests/
+keys/
+hooks/time_sync.py

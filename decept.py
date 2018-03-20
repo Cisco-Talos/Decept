@@ -114,7 +114,6 @@ class DeceptProxy():
         self.protocol_blueprints = None
         self.pkt_count = 0
         self.max_conns = 5
-        self.handler_trigger = False
 
         self.verbose = True
 
@@ -1108,11 +1107,10 @@ class DeceptProxy():
             with open(dstfile,'wb') as f:
                 f.write(inbound)
 
-        if self.inbound_hook and self.handler_trigger:
+        if self.inbound_hook:
             #output("[<.<] Pre-hook datalen: %d" %len(inbound),CYAN)
             inbound = self.inbound_hook(inbound)
             #output("[<.<] Pre-hook datalen: %d" %len(inbound),CYAN)
-            self.handler_trigger = False
 
         return inbound
 
@@ -1130,9 +1128,6 @@ class DeceptProxy():
             #output("[>.>] Pre-hook datalen: %d" %len(outbound),CYAN)
             outbound = self.outbound_hook(outbound)
             #output("[>.>] Post-hook datalen: %d" %len(outbound),CYAN)
-
-        if "proxy config" in outbound:
-            self.handler_trigger = True
 
         return outbound
 
@@ -1349,7 +1344,6 @@ def main():
                 try: 
                     imp.load_source("in_hook",inbound_hook) 
                     proxy.inbound_hook = sys.modules["in_hook"].inbound_hook
-                    #output("[!.!] inbound_hook imported!")
                 except:
                     output("Could not import inbound hook: %s" % inbound_hook,YELLOW)
 
@@ -1358,7 +1352,6 @@ def main():
                 try: 
                     imp.load_source("out_hook",outbound_hook) 
                     proxy.outbound_hook = sys.modules["out_hook"].outbound_hook
-                    #output("[!.!] outbound_hook imported!")
                 except:
                     output("Could not import outbound hook: %s" % outbound_hook,YELLOW)
               
