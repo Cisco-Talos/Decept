@@ -663,9 +663,9 @@ class DeceptProxy():
         # maybe save it till we recv? 
         if self.receive_first and self.local_end_type in ConnectionBased:
             remote_buffer = get_bytes(schro_remote)
+            remote_buffer = self.inbound_handler(remote_buffer,rhost,self.lhost)
             if self.verbose:
                 hexdump(remote_buffer)  
-            remote_buffer = self.inbound_handler(remote_buffer,rhost,self.lhost)
             self.pkt_count+=1
         
             #if data to send to local, do so
@@ -795,8 +795,6 @@ class DeceptProxy():
 
                     byte_count += len(buf)
 
-                    if byte_count and self.verbose:
-                        hexdump(buf)
 
                     # readable socket w/no data => closed connection  
                     # if there's data, perform appropriate handlers, and then send 
@@ -804,6 +802,9 @@ class DeceptProxy():
                     if s == schro_local:
                         # Case LOCAL] => [REMOTE
                         buf = self.outbound_handler(buf,self.lhost,self.rhost) 
+                        if byte_count and self.verbose:
+                            hexdump(buf)
+
                         if len(buf):
                             self.pkt_count+=1
 
@@ -819,6 +820,9 @@ class DeceptProxy():
                     if s == schro_remote:
                         # Case LOCAL] <= [REMOTE 
                         buf = self.inbound_handler(buf,rhost,rport)
+                        if byte_count and self.verbose:
+                            hexdump(buf)
+
                         if len(buf): 
                             self.pkt_count+=1
 
@@ -834,6 +838,9 @@ class DeceptProxy():
                     try: #udp port range case
                         if s in schro_local: 
                             buf = self.outbound_handler(buf,self.lhost,self.rhost) 
+                            if byte_count and self.verbose:
+                                hexdump(buf)
+
                             if len(buf):
                                 self.pkt_count+=1
                                 active_udp = s # so we know where to throw packets back to 
@@ -1209,7 +1216,7 @@ def raw_to_cstruct_args(raw_bytes,cstruct):
 def macdump(src):
     return ':'.join(["%02x" % ord(c) for c in src])
 
-
+#!TODO: compress consecutive repeats of chars.
 def hexdump(src,length=16):
     # Licensed with PSF
     # http://code.activestate.com/recipes/142812-hex-dumper
@@ -1225,6 +1232,7 @@ def hexdump(src,length=16):
         result.append(b"%04x   %-*s   %s" % (i,length*(digits+1),hexa, text))
         
     output(b'\n'.join(result))
+
 
 
 def dumb_arg_helper(option,default=None,required=False):
