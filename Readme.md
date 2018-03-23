@@ -13,6 +13,8 @@ format that is suitable for fuzzing with the Mutiny Fuzzing Framework.
 
 * SSH proxying/sniffing/filtering with lil_sshniffer.py and lil_netkit.py  
 
+* HTTP/HTTPS multiplexing. Examine hosts.conf for more information.
+
 * Based off of the tcp proxy.py from Black Hat Python by Justin Seitz
 
 ```

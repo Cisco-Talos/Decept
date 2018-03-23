@@ -35,6 +35,11 @@ openssl x509 -req -days 3650 -in mitm_inter.csr -CA mitmRoot.crt -CAkey mitmRoot
                              -CAcreateserial -out mitm_inter.crt -sha256 
 check_return
 
+echo -e "\e[30;48;5;82m[5.5] Verifying Intermediate with RootCA\e[0m"
+openssl verify -verbose -x509_strict -CAfile mitmRoot.crt mitm_inter.crt
+check_return
+
+
 dst=`date | tr " " "-"`
 mkdir $date
 mv mitm* $date 

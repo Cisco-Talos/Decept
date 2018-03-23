@@ -169,10 +169,12 @@ class DeceptProxy():
         self.snaplen = 65535
         self.pcap_interface = "eth0"
         self.mon_flag = None 
+    
+        self.hostconf_dict = {}
 
+                        
         self.local_certfile=local_cert
         self.local_keyfile=local_key
-        
         
         # these will get overwritten with --rkey/--rcert options
         # if both are provided
@@ -491,6 +493,30 @@ class DeceptProxy():
         if self.fuzz_file: 
             self.fuzzerData = mutiny.FuzzerData()
 
+        # attempt to parse config file, if any. Should be located in 'rhost'
+        try:
+            confbuf = ""
+            conflist = []
+            with open(self.rhost,"r") as f:
+                confbuf = f.read() 
+            # check for config signature
+            if confbuf[0:9] == "# <(^_^)>":
+                for line in filter(None,confbuf.split("\n")): 
+                    if line[0] != "#":
+                        conflist.append(line)
+
+            if len(conflist) > 0:
+                for entry in conflist:
+                    try:
+                        name,ip = entry.split("|") 
+                        if len(name) and len(ip):
+                            self.hostconf_dict[name] = ip
+                            output("[!.!] Added %s | %s" % (name,ip),CYAN)
+                    except:
+                        pass
+        except:
+            pass
+
 
         #! Todo, no loop for UDP...
         while True:
@@ -544,14 +570,56 @@ class DeceptProxy():
 
 
     def proxy_loop(self,local_socket,rhost,rport):
-        try:
-            rhost = socket.gethostbyname(rhost)
-        except Exception as e:
-            if "Temporary failure in name resolution" in e or "Name or service" in e:
-                output(str(e),YELLOW)
-                output("[x.x] Unable to resolve DNS name: %s" % (rhost), RED)
-                local_socket.close()
+   
+        # used with hostconf_dict
+        initial_buff = ""
+
+        # Attempt to parse as hostname. 
+        if len(self.hostconf_dict) <= 0:
+            try:
+                rhost = socket.gethostbyname(rhost)
+            except Exception as e:
+                if "Temporary failure in name resolution" in e or "Name or service" in e:
+                    output(str(e),YELLOW)
+                    output("[x.x] Unable to resolve DNS name: %s" % (rhost), RED)
+                    local_socket.close()
+                    sys.exit()
+
+        else:
+            # See if we have a hostconf entry for rhost
+            schro_local = local_socket
+            hostname = ""
+            
+            if self.local_end_type == "ssl":
+                try:
+                    schro_local = self.server_context.wrap_socket(local_socket, server_side=True)  
+                except ssl.SSLError as e:
+                    output("[x.x] Unable to wrap local SSL socket.",YELLOW)
+                    output(str(e),RED)
+                    schro_local.close()
+                    sys.exit()
+
+            try:
+                initial_buff = self.get_bytes(schro_local)
+                #output(initial_buff,YELLOW)
+                for line in initial_buff.split("\n"):
+                    if "Host:" in line: 
+                        hostname = line.split(" ")[1].rstrip()
+            except Exception as e:
+                output("[x.x] No 'Host:' header from local socket with hostconf!",RED)
+                output(str(e),RED)
+                schro_local.close()
                 sys.exit()
+    
+            if len(hostname) == 0:
+                output("[x.x] No 'Host:' header from local socket with hostconf!",RED)
+                schro_local.close()
+                sys.exit()
+
+            rhost = self.hostconf_dict[hostname] 
+            self.rhost = hostname
+            output("[-.0] Connecting to %s (%s:%d)"%(rhost,hostname,rport),ORANGE) 
+
 
         remote_socket = self.socket_plinko(rhost,self.remote_end_type)
         
@@ -562,8 +630,9 @@ class DeceptProxy():
         # schro == schroedinger
         # simultaneuously ssl wrapped and not until afterwards
         schro_remote = remote_socket
-        schro_local = local_socket
         
+        if not len(initial_buff): 
+            schro_local = local_socket
                     
         try:
             if self.remote_end_type in ConnectionBased:
@@ -587,7 +656,7 @@ class DeceptProxy():
             output("[x.x] Unable to connect to %s,%s" % (rhost,str(rport)), RED)
             sys.exit()
 
-        if self.local_end_type == "ssl":
+        if self.local_end_type == "ssl" and len(initial_buff) == 0:
             try:
                 schro_local = self.server_context.wrap_socket(local_socket, server_side=True)  
             except ssl.SSLError as e:
@@ -595,7 +664,7 @@ class DeceptProxy():
                 output(str(e),RED)
                 schro_local.close()
                 sys.exit()
-        elif self.local_end_type == "dtls":
+        elif self.local_end_type == "dtls" and len(initial_buff) == 0:
              try:
                 schro_local = SSL.Connection(self.server_context,local_socket) 
              except Exception as e:
@@ -741,6 +810,7 @@ class DeceptProxy():
                     remote_socket.close()
                     sys.exit()
 
+
                  
 
         buf = ""
@@ -753,7 +823,8 @@ class DeceptProxy():
         remote_host = None
         remote_port = -1
         handshake_flag = False
-
+        
+       
         try:
             schro_list = schro_local[:] 
             schro_list.append(schro_remote)
@@ -761,9 +832,32 @@ class DeceptProxy():
         except:
             schro_list = [schro_local, schro_remote]
 
+        if len(initial_buff):
+            byte_count = len(initial_buff)
+            buf = self.outbound_handler(initial_buff,self.lhost,self.rhost) 
+            if byte_count and self.verbose:
+                hexdump(buf)
+
+            if len(buf):
+                self.pkt_count+=1
+
+                if self.remote_end_type in ConnectionBased:
+                    self.buffered_send(schro_remote,buf)
+                elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
+                    sys.stdout.write(buf)      
+                else:
+                    self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
+
+                output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
+
+
         try:
             while True: 
-                byte_count = 0
+                if not len(initial_buff): 
+                    byte_count = 0
+                else:
+                    initial_buff = ""
+
                 if self.killswitch.is_set():
                     if self.local_end_type == "ssl":
                         try:
@@ -801,6 +895,7 @@ class DeceptProxy():
                     # Need to see which direction first though
                     if s == schro_local:
                         # Case LOCAL] => [REMOTE
+                        
                         buf = self.outbound_handler(buf,self.lhost,self.rhost) 
                         if byte_count and self.verbose:
                             hexdump(buf)
@@ -819,6 +914,7 @@ class DeceptProxy():
 
                     if s == schro_remote:
                         # Case LOCAL] <= [REMOTE 
+                        output("inbound")
                         buf = self.inbound_handler(buf,rhost,rport)
                         if byte_count and self.verbose:
                             hexdump(buf)
