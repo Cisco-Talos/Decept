@@ -67,6 +67,8 @@ except:
 from ctypes import *
 from re import match
 from time import time
+from datetime import datetime
+
 from os.path import join,isfile,abspath
 from platform import system
 from os import mkdir,getcwd,remove
@@ -109,6 +111,8 @@ class DeceptProxy():
             output("Local DTLS sockets not supported yet, sorry (^_^);;;")
             sys.exit()
             
+        self.output_lock = multiprocessing.Lock()    
+
         if "udp" in local_end_type or "dtls" in local_end_type:
             self.conn = False 
         self.protocol_blueprints = None
@@ -419,10 +423,18 @@ class DeceptProxy():
             #self.remote_context.set_ciphers(ciphers)
 
         # prep for dumping raw datagrams
-        if self.dumpraw:
+        if len(self.dumpraw) > 0:
             try:
                 mkdir(self.dumpraw)
             except Exception as e:
+                pass
+
+            try:
+                sub_folder = str(datetime.now()).replace(" ","_") 
+                self.dumpraw = join(self.dumpraw,sub_folder) 
+                mkdir(self.dumpraw)
+            except Exception as e:
+                print e
                 pass
         
         # If we're attempting to write to a pcap, shouldn't it be required to be L2?
@@ -536,12 +548,16 @@ class DeceptProxy():
                     proxy_thread = threading.Thread(target = self.proxy_loop, 
                                                        args = (csock,
                                                                self.rhost,
-                                                               self.rport)) 
+                                                               self.rport,
+                                                               addr,
+                                                               self.output_lock)) 
                 else:
                     proxy_thread = multiprocessing.Process(target = self.proxy_loop, 
                                                            args = (csock,
                                                                    self.rhost,
-                                                                   self.rport)) 
+                                                                   self.rport,
+                                                                   addr,
+                                                                   self.output_lock)) 
 
                 proxy_thread.start()
                 csock = None
@@ -553,7 +569,7 @@ class DeceptProxy():
                 return
 
             elif self.server_socket == sys.stdin:
-                self.proxy_loop(sys.stdin,self.rhost,self.rport)
+                self.proxy_loop(sys.stdin,self.rhost,self.rport,("stdin",0))
 
             elif self.server_socket.family == socket.AF_PACKET: 
                 output("[>.>] L2 ready: %s:%s <=> %s:%s" % (str(self.lhost),str(self.lport),str(self.rhost),str(self.rport)),YELLOW) 
@@ -569,8 +585,12 @@ class DeceptProxy():
                 pass
 
 
-    def proxy_loop(self,local_socket,rhost,rport):
+    def proxy_loop(self,local_socket,rhost,rport,cli_addr,plock):
    
+        self.thread_id = multiprocessing.current_process().name.replace("Process","session")
+
+        #self.dumpraw = dumb_arg_helper("--dumpraw","",True) 
+
         # used with hostconf_dict
         initial_buff = ""
 
@@ -581,7 +601,7 @@ class DeceptProxy():
             except Exception as e:
                 if "Temporary failure in name resolution" in e or "Name or service" in e:
                     output(str(e),YELLOW)
-                    output("[x.x] Unable to resolve DNS name: %s" % (rhost), RED)
+                    output("[x.x] Unable to resolve DNS name: %s" % (rhost), RED, plock)
                     local_socket.close()
                     sys.exit()
 
@@ -594,37 +614,43 @@ class DeceptProxy():
                 try:
                     schro_local = self.server_context.wrap_socket(local_socket, server_side=True)  
                 except ssl.SSLError as e:
-                    output("[x.x] Unable to wrap local SSL socket.",YELLOW)
-                    output(str(e),RED)
+                    output("[x.x] Unable to wrap local SSL socket.",YELLOW, plock)
+                    output(str(e),RED, plock)
                     schro_local.close()
                     sys.exit()
 
             try:
                 initial_buff = self.get_bytes(schro_local)
-                #output(initial_buff,YELLOW)
+                #output(initial_buff,YELLOW, plock)
                 for line in initial_buff.split("\n"):
                     if "Host:" in line: 
                         hostname = line.split(" ")[1].rstrip()
             except Exception as e:
-                output("[x.x] No 'Host:' header from local socket with hostconf!",RED)
-                output(str(e),RED)
+                if len(initial_buff) > 0:
+                    output("[x.x] No 'Host:' header from local socket with hostconf!",RED, plock)
+                    output(initial_buff), plock 
+                else:
+                    output("[x.x] Empty Message",RED, plock)
+                output(str(e),RED, plock)
+                output(initial_buff,YELLOW, plock)
                 schro_local.close()
                 sys.exit()
     
             if len(hostname) == 0:
-                output("[x.x] No 'Host:' header from local socket with hostconf!",RED)
+                output("[x.x] Empty Message",RED, plock)
+                output(initial_buff), plock 
                 schro_local.close()
                 sys.exit()
 
             rhost = self.hostconf_dict[hostname] 
             self.rhost = hostname
-            output("[-.0] Connecting to %s (%s:%d)"%(rhost,hostname,rport),ORANGE) 
+            output("[-.0] Connecting to %s (%s:%d)"%(rhost,hostname,rport),ORANGE), plock 
 
 
         remote_socket = self.socket_plinko(rhost,self.remote_end_type)
         
         if (self.rbind_addr != "0.0.0.0") or (self.rbind_port > 0):
-            output("[!.!] Binding Rsock to %s:%d"%(self.rbind_addr,self.rbind_port),CYAN)
+            output("[!.!] Binding Rsock to %s:%d"%(self.rbind_addr,self.rbind_port),CYAN, plock)
             remote_socket.bind((self.rbind_addr,self.rbind_port))
 
         # schro == schroedinger
@@ -652,24 +678,24 @@ class DeceptProxy():
                     remote_socket.connect((rhost,rport))
 
         except Exception as e:
-            output(str(e),YELLOW)
-            output("[x.x] Unable to connect to %s,%s" % (rhost,str(rport)), RED)
+            output(str(e),YELLOW, plock)
+            output("[x.x] Unable to connect to %s,%s" % (rhost,str(rport)), RED, plock)
             sys.exit()
 
         if self.local_end_type == "ssl" and len(initial_buff) == 0:
             try:
                 schro_local = self.server_context.wrap_socket(local_socket, server_side=True)  
             except ssl.SSLError as e:
-                output("[x.x] Unable to wrap local SSL socket.",YELLOW)
-                output(str(e),RED)
+                output("[x.x] Unable to wrap local SSL socket.",YELLOW, plock)
+                output(str(e),RED, plock)
                 schro_local.close()
                 sys.exit()
         elif self.local_end_type == "dtls" and len(initial_buff) == 0:
              try:
                 schro_local = SSL.Connection(self.server_context,local_socket) 
              except Exception as e:
-                output("[x.x] Unable to wrap local DTLS socket.",YELLOW)
-                output(str(e),RED)
+                output("[x.x] Unable to wrap local DTLS socket.",YELLOW, plock)
+                output(str(e),RED, plock)
                 schro_local.close()
                 sys.exit()
 
@@ -679,14 +705,14 @@ class DeceptProxy():
             try: 
                 try:
                     self.remote_context.load_cert_chain(certfile=self.remote_certfile,keyfile=self.remote_keyfile)
-                    output("[!-!] Using %s and %s!"%(self.remote_certfile,self.remote_keyfile),CYAN)
+                    #output("[!-!] Using %s and %s!"%(self.remote_certfile,self.remote_keyfile),CYAN, plock)
                 except: 
                     try:
                         self.remote_context.load_cert_chain(certfile=self.remote_certfile)
-                        output("[!-!] Using %s"%(self.remote_certfile,self.remote_keyfile),CYAN)
+                        #output("[!-!] Using %s"%(self.remote_certfile,self.remote_keyfile),CYAN, plock)
                     except:
-                        output("[x.x] Unable to do SSL remote, where yo' keys at?",YELLOW)
-                        output("[!-!] Using cert %s and key %s!"%(self.remote_certfile,self.remote_keyfile),CYAN)
+                        output("[x.x] Unable to do SSL remote, where yo' keys at?",YELLOW, plock)
+                        output("[!-!] Using cert %s and key %s!"%(self.remote_certfile,self.remote_keyfile),CYAN, plock)
                         sys.exit()
 
                         
@@ -695,8 +721,8 @@ class DeceptProxy():
                     try: 
                         schro_remote = self.remote_context.wrap_socket(remote_socket,server_hostname=self.remote_verify) 
                     except Exception as e:
-                        output("[x.x] Unable to verify remote host as '%s' "%self.remote_verify,YELLOW)
-                        output(str(e),RED)
+                        output("[x.x] Unable to verify remote host as '%s' "%self.remote_verify,YELLOW, plock)
+                        output(str(e),RED, plock)
                         schro_remote.close()
                         sys.exit()
 
@@ -705,13 +731,13 @@ class DeceptProxy():
                 
 
             except ssl.SSLError as e:
-                output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW)
-                output(str(e),RED)
+                output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW, plock)
+                output(str(e),RED, plock)
                 schro_remote.close()
                 sys.exit()
             except Exception as e:
-                output("[x.x] Assorted error, yo",YELLOW)
-                output(str(e),RED)
+                output("[x.x] Assorted error, yo",YELLOW, plock)
+                output(str(e),RED, plock)
                 remote_socket.close()
                 sys.exit()
 
@@ -723,8 +749,8 @@ class DeceptProxy():
                 schro_remote.connect((rhost,rport))
                 schro_remote.do_handshake()
             except Exception as e:
-                output("[x.x] DTLS error, yo",YELLOW)
-                output(str(e),RED)
+                output("[x.x] DTLS error, yo",YELLOW, plock)
+                output(str(e),RED, plock)
                 remote_socket.close()
                 sys.exit()
                 
@@ -734,12 +760,12 @@ class DeceptProxy():
             remote_buffer = get_bytes(schro_remote)
             remote_buffer = self.inbound_handler(remote_buffer,rhost,self.lhost)
             if self.verbose:
-                hexdump(remote_buffer)  
+                hexdump(remote_buffer,CYAN)  
             self.pkt_count+=1
         
             #if data to send to local, do so
             if len(remote_buffer):
-                output("[<.<] Sending %d bytes inbound (%s:%d)." % (len(remote_buffer),self.lhost,self.lport),ORANGE)
+                output("[<.<] Sending %d bytes inbound (%s:%d)." % (len(remote_buffer),self.lhost,self.lport),ORANGE, plock)
                 if self.local_end_type in ConnectionBased: 
                     self.buffered_send(schro_local,remote_buffer)
                 else:   
@@ -751,7 +777,7 @@ class DeceptProxy():
                     
                 schro_local = [schro_local]
                 schro_local_range = validateNumberRange(self.udp_port_range,True) # flatten out number range into list of integers
-                output("[!-!] Attempting to bind %d UDP ports : %s" %(len(schro_local_range),self.udp_port_range),GREEN)
+                output("[!-!] Attempting to bind %d UDP ports : %s" %(len(schro_local_range),self.udp_port_range),GREEN, plock)
                 for port in schro_local_range:
                     tmp = self.socket_plinko(self.lhost,self.local_end_type) 
                     # shoulda implimented server_init better to take a socket, eh.
@@ -760,7 +786,7 @@ class DeceptProxy():
                         tmp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1) 
                         schro_local.append(tmp) 
                     except:
-                        output("[x.x] Unable to bind UDP %s:%d."%(self.lhost,port),YELLOW)
+                        output("[x.x] Unable to bind UDP %s:%d."%(self.lhost,port),YELLOW, plock)
             
                 while True:
                     readable,__,__ = select.select(schro_local,[],schro_local,self.timeout)
@@ -792,8 +818,8 @@ class DeceptProxy():
                     #print remote_cert
 
                 except ssl.SSLError as e:
-                    output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW)
-                    output(str(e),RED)
+                    output("[x.x] Unable to do SSL remote. Did you send a non-SSL request?",YELLOW, plock)
+                    output(str(e),RED, plock)
                     schro_remote.close()
                     sys.exit()
 
@@ -805,7 +831,7 @@ class DeceptProxy():
                     schro_remote.connect((rhost,rport))
                     schro_remote.do_handshake()
                 except Exception as e:
-                    output("[x.x] DTLS error, yo",YELLOW)
+                    output("[x.x] DTLS error, yo",YELLOW, plock)
                     output(str(e),RED)
                     remote_socket.close()
                     sys.exit()
@@ -835,8 +861,11 @@ class DeceptProxy():
         if len(initial_buff):
             byte_count = len(initial_buff)
             buf = self.outbound_handler(initial_buff,self.lhost,self.rhost) 
-            if byte_count and self.verbose:
-                hexdump(buf)
+            if byte_count > 0 and self.verbose:
+                if byte_count < 0x2000:
+                    hexdump(buf,CYAN)
+                else:
+                    output("[!_!] Truncated Message len %d!"%byte_count, plock)
 
             if len(buf):
                 self.pkt_count+=1
@@ -848,7 +877,7 @@ class DeceptProxy():
                 else:
                     self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
 
-                output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
+                output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN, plock)
 
 
         try:
@@ -898,7 +927,11 @@ class DeceptProxy():
                         
                         buf = self.outbound_handler(buf,self.lhost,self.rhost) 
                         if byte_count and self.verbose:
-                            hexdump(buf)
+                            plock.acquire()
+                            if byte_count < 0x2000:
+                                hexdump(buf,CYAN)
+                            else:
+                                output("[!_!] Truncated Message len %d!"%byte_count,CYAN)
 
                         if len(buf):
                             self.pkt_count+=1
@@ -910,14 +943,22 @@ class DeceptProxy():
                             else:
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
 
-                            output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
+                            output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN)
+
+                        try:
+                            plock.release()
+                        except:
+                            pass
 
                     if s == schro_remote:
                         # Case LOCAL] <= [REMOTE 
-                        output("inbound")
                         buf = self.inbound_handler(buf,rhost,rport)
                         if byte_count and self.verbose:
-                            hexdump(buf)
+                            plock.acquire()
+                            if byte_count < 0x2000:
+                                hexdump(buf,YELLOW)
+                            else:
+                                output("[!_!] Truncated Message len %d!"%byte_count,YELLOW)
 
                         if len(buf): 
                             self.pkt_count+=1
@@ -928,20 +969,34 @@ class DeceptProxy():
                                 sys.stdout.write(buf)      
                             else:   
                                 self.buffered_sendto(schro_local,buf,(self.lhost,self.lport))
-                            output("[o.o] Sent %d bytes to local (%s:%d)\n" % (len(buf),self.lhost,self.lport),CYAN)
+                            output("[o.o] Sent %d bytes to local (%s:%d<-%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),YELLOW)
                             resp_count+=1
+                        try:
+                            plock.release()
+                        except:
+                            pass
 
                     try: #udp port range case
                         if s in schro_local: 
                             buf = self.outbound_handler(buf,self.lhost,self.rhost) 
                             if byte_count and self.verbose:
-                                hexdump(buf)
+                                plock.acquire()
+                                if byte_count < 0x2000:
+                                    hexdump(buf)
+                                else:
+                                    output("[!_!] Truncated Message len %d!"%byte_count)
+
 
                             if len(buf):
                                 self.pkt_count+=1
                                 active_udp = s # so we know where to throw packets back to 
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
-                                output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
+                                output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),GREEN)
+
+                            try:
+                                plock.release()
+                            except:
+                                pass
                              
                     except Exception as e:
                         pass
@@ -964,7 +1019,7 @@ class DeceptProxy():
                         schro_local.close()
                         if self.remote_end_type in ConnectionBased:
                             schro_remote.close() 
-                        output("[-.-] No more data, exiting",YELLOW)
+                        output("[-.-] No more data, closing connection (%s:%d<->%s:%d)\n" % (cli_addr[0],cli_addr[1],self.rhost,self.rport),ORANGE)
                         break          
 
         except KeyboardInterrupt:
@@ -1205,8 +1260,8 @@ class DeceptProxy():
         #write_packet_header(inbound,src,dst)
         self.write_packet_data(inbound,1) 
 
-        if self.dumpraw:
-            dstfile = join(getcwd(),self.dumpraw,"inbound-%d"%self.pkt_count)
+        if len(self.dumpraw) > 0:
+            dstfile = join(getcwd(),self.dumpraw,"%s-%d-inbound"%(self.thread_id,self.pkt_count))
             with open(dstfile,'wb') as f:
                 f.write(inbound)
 
@@ -1222,8 +1277,8 @@ class DeceptProxy():
         #write_packet_header(outbound,src,dst) 
         self.write_packet_data(outbound,0)    
 
-        if self.dumpraw:
-            dstfile = join(getcwd(),self.dumpraw,"outbound-%d"%self.pkt_count)
+        if len(self.dumpraw) > 0:
+            dstfile = join(getcwd(),self.dumpraw,"%s-%d-outbound"%(self.thread_id,self.pkt_count))
             with open(dstfile,'wb') as f:
                 f.write(outbound)
 
@@ -1313,7 +1368,7 @@ def macdump(src):
     return ':'.join(["%02x" % ord(c) for c in src])
 
 #!TODO: compress consecutive repeats of chars.
-def hexdump(src,length=16):
+def hexdump(src,color,length=16):
     # Licensed with PSF
     # http://code.activestate.com/recipes/142812-hex-dumper
     # with minor edits
@@ -1326,8 +1381,11 @@ def hexdump(src,length=16):
 
         text = b''.join([x if 0x20 <= ord(x) < 0x7f else b'.' for x in s])
         result.append(b"%04x   %-*s   %s" % (i,length*(digits+1),hexa, text))
-        
-    output(b'\n'.join(result))
+
+    if color:
+        output(b'\n'.join(result),color)
+    else:
+        output(b'\n'.join(result))
 
 
 
@@ -1488,13 +1546,17 @@ PURPLE='\033[95m'
 CYAN='\033[96m'
 CLEAR='\033[00m' 
 
-def output(inp,color=None):
+def output(inp,color=None,lock=None):
+    if lock:
+        lock.acquire()
     if color:
         sys.__stdout__.write("%s%s%s\n" % (color,str(inp),CLEAR)) 
         sys.__stdout__.flush()
     else:
         sys.__stdout__.write(str(inp)+"\n")
         sys.__stdout__.flush()
+    if lock:
+        lock.release()
 
 # Taken from socket module itself, doesn't seem like any
 # other L3 protocols are supported....
