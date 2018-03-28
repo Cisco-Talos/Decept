@@ -423,7 +423,7 @@ class DeceptProxy():
             #self.remote_context.set_ciphers(ciphers)
 
         # prep for dumping raw datagrams
-        if len(self.dumpraw) > 0:
+        if self.dumpraw:
             try:
                 mkdir(self.dumpraw)
             except Exception as e:
@@ -1260,7 +1260,7 @@ class DeceptProxy():
         #write_packet_header(inbound,src,dst)
         self.write_packet_data(inbound,1) 
 
-        if len(self.dumpraw) > 0:
+        if self.dumpraw:
             dstfile = join(getcwd(),self.dumpraw,"%s-%d-inbound"%(self.thread_id,self.pkt_count))
             with open(dstfile,'wb') as f:
                 f.write(inbound)
@@ -1277,7 +1277,7 @@ class DeceptProxy():
         #write_packet_header(outbound,src,dst) 
         self.write_packet_data(outbound,0)    
 
-        if len(self.dumpraw) > 0:
+        if self.dumpraw:
             dstfile = join(getcwd(),self.dumpraw,"%s-%d-outbound"%(self.thread_id,self.pkt_count))
             with open(dstfile,'wb') as f:
                 f.write(outbound)
