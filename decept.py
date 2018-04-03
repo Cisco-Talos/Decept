@@ -538,9 +538,13 @@ class DeceptProxy():
 
                 #print out conn info
                 if addr:
+                    self.output_lock.acquire()
                     output("[>.>] Received Connection from %s" % str(addr),GREEN) 
+                    self.output_lock.release()
                 else:
+                    self.output_lock.acquire()
                     output("[>.>] Received Connection from UnixSocket",GREEN) 
+                    self.output_lock.release()
 
 
                 if "windows" in system().lower() or "cygwin" in system().lower():
@@ -589,7 +593,8 @@ class DeceptProxy():
    
         self.thread_id = multiprocessing.current_process().name.replace("Process","session")
 
-        #self.dumpraw = dumb_arg_helper("--dumpraw","",True) 
+        # use for passing data between inbound and outbound handlers. 
+        self.userdata = ""
 
         # used with hostconf_dict
         initial_buff = ""
@@ -642,7 +647,12 @@ class DeceptProxy():
                 schro_local.close()
                 sys.exit()
 
-            rhost = self.hostconf_dict[hostname] 
+            try:
+                rhost = self.hostconf_dict[hostname] 
+            except:
+                output("[x.x] No entry for %s in hostconf!"%hostname,RED, plock)
+                output(initial_buff, plock) 
+
             self.rhost = hostname
             output("[-.0] Connecting to %s (%s:%d)"%(rhost,hostname,rport),ORANGE), plock 
 
@@ -759,6 +769,7 @@ class DeceptProxy():
         if self.receive_first and self.local_end_type in ConnectionBased:
             remote_buffer = get_bytes(schro_remote)
             remote_buffer = self.inbound_handler(remote_buffer,rhost,self.lhost)
+            
             if self.verbose:
                 hexdump(remote_buffer,CYAN)  
             self.pkt_count+=1
@@ -1267,7 +1278,13 @@ class DeceptProxy():
 
         if self.inbound_hook:
             #output("[<.<] Pre-hook datalen: %d" %len(inbound),CYAN)
-            inbound = self.inbound_hook(inbound)
+            tmp = self.inbound_hook(inbound,self.userdata)
+
+            if isinstance(tmp,basestring): 
+                inbound = tmp
+            else:
+                inbound,self.userdata = tmp 
+
             #output("[<.<] Pre-hook datalen: %d" %len(inbound),CYAN)
 
         return inbound
@@ -1284,8 +1301,15 @@ class DeceptProxy():
 
         if self.outbound_hook:
             #output("[>.>] Pre-hook datalen: %d" %len(outbound),CYAN)
-            outbound = self.outbound_hook(outbound)
+            tmp = self.outbound_hook(outbound,self.userdata)
+    
+            if isinstance(tmp,basestring):
+                outbound = tmp 
+            else:
+                outbound,self.userdata = tmp
+
             #output("[>.>] Post-hook datalen: %d" %len(outbound),CYAN)
+            output(self.userdata)
 
         return outbound
 
