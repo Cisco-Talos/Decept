@@ -1703,6 +1703,13 @@ Hook Files:
   --outhook HOOKFILE | Function Prototype: string outbound_hook(outbound):
   --inhook  HOOKFILE | Function Prototype: string inbound_hook(inbound):
 
+Host Config File:
+  Optionally, instead of specifying a remote host, if you specify a valid
+  filename, you can multiplex HTTP/HTTPS connections to different URLs.
+  Please examine the example "hosts.conf" for more information.
+
+------------------------------------------------------------------------
+
 L2 usage: decept.py <local_int> <local_mac> <remote_int> <remote_mac>
 
 L2 options:

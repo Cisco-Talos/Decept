@@ -18,45 +18,80 @@ format that is suitable for fuzzing with the Mutiny Fuzzing Framework.
 * Based off of the tcp proxy.py from Black Hat Python by Justin Seitz
 
 ```
+[<_<] Decept proxy/sniffer [>_>]
+
+
 usage: decept.py <local_host> <local_port> <remote_host> <remote_port> [OPTIONS]
 
 optional arguments:
   -h, --help            show this help message and exit
+  --quiet               Don't show hexdumps
   --recv_first          Receive stuff first?
   --timeout TIMEOUT     Timeout for outbound socket
   --loglast LOGLAST     Log the last packet (unimplimented)
-  --pcapdir PCAPDIR     Directory to store pcaps (extensions required)
-  --pps                 Create a new pcap for each session
-  --snaplen SNAPLEN     Length of packet truncation
   --fuzzer FUZZFILE     *.fuzzer output for mutiny (extensions required)
   --dumpraw DUMPDIR     Directory to dump raw packet files into
                         (fmt = %d-%s % (pkt_num,[inbound|outbound]))
-  --l_abstract          Treat local socket as abstract namespace socket
-  --r_abstract          Treat remote socket as abstract namespace socket
+  --max-packet-len LEN  Max amount of data per packet when sending data
+  --dont_kill           For when you don't want the connection to die if
+                        neither side sends packets for TIMEOUT seconds.
+                        Use with --expect if you still need the session
+                        to end though.
+  --expect RESPCOUNT    Useful with --dont_kill. Wait for RESPCOUNT
+                        responses from the remote server, and then kill
+                        the connection. Good for fuzzing campaigns.
 
+  -l, {ssl,udp,tcp}|[L3 Proto]     Local endpoint type
+  -r, {ssl,udp,tcp}|[L3 Proto]     Remote endpoint type
 
-L4 options:
-  -l, --localEnd {ssl,udp,unix,tcp,unix_udp}
-                        Local endpoint type
-  -r, --remoteEnd {ssl,udp,unix,tcp,unix_udp}
-                        Remote endpoint type
+  --rbind_addr IPADDR   IP address to use for remote side. Make sure that
+                        you have the IP somewhere on an interface though.
+  --rbind_port PORT     PORT to bind to for remote side.
 
-L3 options:
-  --L3_proto PROTO      L3 proxy, PROTO=>raw to access >= L3 (IPHDR_INCL=1)
-                        otherwise, set Proto to OSPF/EIGRP/etc... and kernel
-                        will craft the headers up till the protocol itself
+SSL Options:
+  --lcert SSL_PEM_CERT  Cert to use for accepting local SSL
+                        (Optionally cert and key in one file)
+  --lkey SSL_PEM_KEY    Private key for local cert
+  --rcert SSL_PEM_CERT  Cert to use for connecting to remote SSL
+                        (Optionally cert and key in one file)
+  --rkey SSL_PEM_KEY    Private key for remote cert
+  --rverify HOSTNAME    Verify remote side as host HOSTNAME before
+                        connecting.
+
+Hook Files:
+  Optional function definitions for processing data between inbound
+  and outbound endpoints. Look at "inbound_handler"/"outbound_handler"
+  for more information.
+
+  --outhook HOOKFILE | Function Prototype: string outbound_hook(outbound):
+  --inhook  HOOKFILE | Function Prototype: string inbound_hook(inbound):
+
+Host Config File:
+  Optionally, instead of specifying a remote host, if you specify a valid
+  filename, you can multiplex HTTP/HTTPS connections to different URLs.
+  Please examine the example "hosts.conf" for more information.
+
+------------------------------------------------------------------------
 
 L2 usage: decept.py <local_int> <local_mac> <remote_int> <remote_mac>
 
 L2 options:
-
   --l2_filter MACADDR   Ignore inbound traffic except from MACADDR
   --l2_MTU    MTU       Set Maximum Transmision Unit for socket
   --l2_forward          Bridge the local interface and remote interface
 
+  --pcap PCAPDIR     Directory to store pcaps
+  --pps                 Create a new pcap for each session
+  --snaplen SNAPLEN     Length of packet truncation
+  --pcap_interface IFACE  Specify which interface the packets will be
+                          coming in on. "eth0" by default.
+
 L4 Usage: decept.py 127.0.0.1 9999 10.0.0.1 8080
-L3 Usage: decept.py 127.0.0.1 0 10.0.0.1 0 --L3_proto OSPF
+L3 Usage: decept.py 127.0.0.1 0 10.0.0.1 0 -l icmp -r icmp
 L2 Usage: decept.py lo 00:00:00:00:00:00 eth0 ff:aa:cc:ee:dd:00
+Unix: decept.py localsocketname 0 remotesocketname 0
+Abstract: decept.py \x00localsocketname 0 \x00remotesocketname 0
+
 ```
 
 # lil_sshniffer.py
