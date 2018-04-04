@@ -431,6 +431,7 @@ class DeceptProxy():
 
             try:
                 sub_folder = str(datetime.now()).replace(" ","_") 
+                sub_folder = sub_folder.replace(":","_")
                 self.dumpraw = join(self.dumpraw,sub_folder) 
                 mkdir(self.dumpraw)
             except Exception as e:
@@ -568,12 +569,12 @@ class DeceptProxy():
                 addr = None
 
             elif self.local_end_type == "udp" or self.local_end_type == "dtls":
-                self.proxy_loop(self.server_socket,self.rhost,self.rport)
+                self.proxy_loop(self.server_socket,self.rhost,self.rport,"",self.output_lock)
                 self.exit_triggers()
                 return
 
             elif self.server_socket == sys.stdin:
-                self.proxy_loop(sys.stdin,self.rhost,self.rport,("stdin",0))
+                self.proxy_loop(sys.stdin,self.rhost,self.rport,("stdin",0),"",self.output_lock)
 
             elif self.server_socket.family == socket.AF_PACKET: 
                 output("[>.>] L2 ready: %s:%s <=> %s:%s" % (str(self.lhost),str(self.lport),str(self.rhost),str(self.rport)),YELLOW) 
@@ -589,7 +590,7 @@ class DeceptProxy():
                 pass
 
 
-    def proxy_loop(self,local_socket,rhost,rport,cli_addr,plock):
+    def proxy_loop(self,local_socket,rhost,rport,cli_addr="",plock=""):
    
         self.thread_id = multiprocessing.current_process().name.replace("Process","session")
 
@@ -883,12 +884,14 @@ class DeceptProxy():
 
                 if self.remote_end_type in ConnectionBased:
                     self.buffered_send(schro_remote,buf)
+                    output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN, plock)
                 elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
                     sys.stdout.write(buf)      
+                    output("[o.o] Sent %d bytes to remote\n" % (len(buf)),YELLOW)
                 else:
                     self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
+                    output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),CYAN)
 
-                output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN, plock)
 
 
         try:
@@ -949,12 +952,14 @@ class DeceptProxy():
 
                             if self.remote_end_type in ConnectionBased:
                                 self.buffered_send(schro_remote,buf)
+                                output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN)
                             elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
                                 sys.stdout.write(buf)      
+                                output("[o.o] Sent %d bytes to remote\n" % (len(buf)),CYAN)
                             else:
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
+                                output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),CYAN)
 
-                            output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN)
 
                         try:
                             plock.release()
@@ -976,11 +981,13 @@ class DeceptProxy():
 
                             if self.local_end_type in ConnectionBased: 
                                 self.buffered_send(schro_local,buf)
+                                output("[o.o] Sent %d bytes to local (%s:%d<-%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),YELLOW)
                             elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
                                 sys.stdout.write(buf)      
+                                output("[o.o] Sent %d bytes to local\n" % (len(buf),YELLOW))
                             else:   
                                 self.buffered_sendto(schro_local,buf,(self.lhost,self.lport))
-                            output("[o.o] Sent %d bytes to local (%s:%d<-%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),YELLOW)
+                                output("[o.o] Sent %d bytes to local from %s:%d\n" % (len(buf),self.rhost,self.rport),YELLOW)
                             resp_count+=1
                         try:
                             plock.release()
@@ -1002,7 +1009,7 @@ class DeceptProxy():
                                 self.pkt_count+=1
                                 active_udp = s # so we know where to throw packets back to 
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
-                                output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),GREEN)
+                                output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
 
                             try:
                                 plock.release()
