@@ -512,11 +512,9 @@ class DeceptProxy():
             conflist = []
             with open(self.rhost,"r") as f:
                 confbuf = f.read() 
-            # check for config signature
-            if confbuf[0:9] == "# <(^_^)>":
-                for line in filter(None,confbuf.split("\n")): 
-                    if line[0] != "#":
-                        conflist.append(line)
+            for line in filter(None,confbuf.split("\n")): 
+                if line[0] != "#":
+                    conflist.append(line)
 
             if len(conflist) > 0:
                 for entry in conflist:
@@ -525,9 +523,11 @@ class DeceptProxy():
                         if len(name) and len(ip):
                             self.hostconf_dict[name] = ip
                             output("[!.!] Added %s | %s" % (name,ip),CYAN)
-                    except:
+                    except Exception as e:
+                        print e
                         pass
-        except:
+        except Exception as e:
+            print e
             pass
 
 
