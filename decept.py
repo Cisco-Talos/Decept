@@ -406,10 +406,6 @@ class DeceptProxy():
                 self.server_socket.listen(self.max_conns)
             except Exception as e:
                 output(e)
-
-
-
-
     
     
     def server_loop(self):
@@ -507,6 +503,7 @@ class DeceptProxy():
             self.fuzzerData = mutiny.FuzzerData()
 
         # attempt to parse config file, if any. Should be located in 'rhost'
+        # will continue if not found.
         try:
             confbuf = ""
             conflist = []
@@ -526,6 +523,9 @@ class DeceptProxy():
                     except Exception as e:
                         print e
                         pass
+        except IOError as e:
+            # no such file
+            pass
         except Exception as e:
             print e
             pass
@@ -539,13 +539,9 @@ class DeceptProxy():
 
                 #print out conn info
                 if addr:
-                    self.output_lock.acquire()
-                    output("[>.>] Received Connection from %s" % str(addr),GREEN) 
-                    self.output_lock.release()
+                    output("[>.>] Received Connection from %s" % str(addr),GREEN,self.output_lock) 
                 else:
-                    self.output_lock.acquire()
-                    output("[>.>] Received Connection from UnixSocket",GREEN) 
-                    self.output_lock.release()
+                    output("[>.>] Received Connection from UnixSocket",GREEN,self.output_lock) 
 
 
                 if "windows" in system().lower() or "cygwin" in system().lower():
@@ -634,7 +630,7 @@ class DeceptProxy():
             except Exception as e:
                 if len(initial_buff) > 0:
                     output("[x.x] No 'Host:' header from local socket with hostconf!",RED, plock)
-                    output(initial_buff), plock 
+                    output(initial_buff, plock) 
                 else:
                     output("[x.x] Empty Message",RED, plock)
                 output(str(e),RED, plock)
@@ -644,7 +640,7 @@ class DeceptProxy():
     
             if len(hostname) == 0:
                 output("[x.x] Empty Message",RED, plock)
-                output(initial_buff), plock 
+                output(initial_buff, plock) 
                 schro_local.close()
                 sys.exit()
 
@@ -655,7 +651,7 @@ class DeceptProxy():
                 output(initial_buff, plock) 
 
             self.rhost = hostname
-            output("[-.0] Connecting to %s (%s:%d)"%(rhost,hostname,rport),ORANGE), plock 
+            output("[-.0] Connecting to %s (%s:%d)"%(rhost,hostname,rport),ORANGE,plock) 
 
 
         remote_socket = self.socket_plinko(rhost,self.remote_end_type)
@@ -938,10 +934,9 @@ class DeceptProxy():
                     # Need to see which direction first though
                     if s == schro_local:
                         # Case LOCAL] => [REMOTE
-                        
+                        plock.acquire()
                         buf = self.outbound_handler(buf,self.lhost,self.rhost) 
                         if byte_count and self.verbose:
-                            plock.acquire()
                             if byte_count < 0x2000:
                                 hexdump(buf,CYAN)
                             else:
@@ -949,7 +944,6 @@ class DeceptProxy():
 
                         if len(buf):
                             self.pkt_count+=1
-
                             if self.remote_end_type in ConnectionBased:
                                 self.buffered_send(schro_remote,buf)
                                 output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN)
@@ -959,18 +953,13 @@ class DeceptProxy():
                             else:
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
                                 output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),CYAN)
-
-
-                        try:
-                            plock.release()
-                        except:
-                            pass
+                        plock.release()
 
                     if s == schro_remote:
                         # Case LOCAL] <= [REMOTE 
+                        plock.acquire()
                         buf = self.inbound_handler(buf,rhost,rport)
                         if byte_count and self.verbose:
-                            plock.acquire()
                             if byte_count < 0x2000:
                                 hexdump(buf,YELLOW)
                             else:
@@ -989,34 +978,31 @@ class DeceptProxy():
                                 self.buffered_sendto(schro_local,buf,(self.lhost,self.lport))
                                 output("[o.o] Sent %d bytes to local from %s:%d\n" % (len(buf),self.rhost,self.rport),YELLOW)
                             resp_count+=1
-                        try:
-                            plock.release()
-                        except:
-                            pass
+                        plock.release()
 
                     try: #udp port range case
                         if s in schro_local: 
+                            plock.acquire()
+
                             buf = self.outbound_handler(buf,self.lhost,self.rhost) 
                             if byte_count and self.verbose:
-                                plock.acquire()
                                 if byte_count < 0x2000:
                                     hexdump(buf)
                                 else:
                                     output("[!_!] Truncated Message len %d!"%byte_count)
 
-
                             if len(buf):
+                                plock.acquire()
                                 self.pkt_count+=1
                                 active_udp = s # so we know where to throw packets back to 
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
                                 output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
 
-                            try:
-                                plock.release()
-                            except:
-                                pass
-                             
+                            plock.release()
+
+                     
                     except Exception as e:
+                        # will error unless schro_local is a list of sockets (i.e. port range).
                         pass
                         
                     if resp_count >= self.expected_resp_count:
@@ -1037,7 +1023,7 @@ class DeceptProxy():
                         schro_local.close()
                         if self.remote_end_type in ConnectionBased:
                             schro_remote.close() 
-                        output("[-.-] No more data, closing connection (%s:%d<->%s:%d)\n" % (cli_addr[0],cli_addr[1],self.rhost,self.rport),ORANGE)
+                        output("[-.-] No more data, closing connection (%s:%d<->%s:%d)\n" % (cli_addr[0],cli_addr[1],self.rhost,self.rport),ORANGE,plock)
                         break          
 
         except KeyboardInterrupt:
@@ -1580,12 +1566,14 @@ CLEAR='\033[00m'
 def output(inp,color=None,lock=None):
     if lock:
         lock.acquire()
+
     if color:
         sys.__stdout__.write("%s%s%s\n" % (color,str(inp),CLEAR)) 
         sys.__stdout__.flush()
     else:
         sys.__stdout__.write(str(inp)+"\n")
         sys.__stdout__.flush()
+
     if lock:
         lock.release()
 
