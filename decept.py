@@ -1853,7 +1853,8 @@ ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
                        "--quiet","--dont_kill","--udppr",
                        "--expect","--really",
                        "--lcert","--lkey","--rcert","--rkey",
-                       "--rverify","--poison","--poison_int"]
+                       "--rverify","--poison","--poison_int",
+                       "--expresp"]
 
 #####################################
 ## Global header for pcap file
