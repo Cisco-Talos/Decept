@@ -124,7 +124,7 @@ class DeceptProxy():
         # don't exit if no data (streaming)
         self.dont_kill = False
         # except if we get past expected_resp_count ^_^
-        self.expected_resp_count = 1
+        self.expected_resp_count = -1
 
         self.udp_port_range = None 
 
@@ -630,6 +630,7 @@ class DeceptProxy():
             if self.local_end_type == "ssl":
                 try:
                     schro_local = self.server_context.wrap_socket(local_socket, server_side=True)  
+                    output("[^.^] Local ssl wrap successful",GREEN,ploc)
                 except ssl.SSLError as e:
                     output("[x.x] Unable to wrap local SSL socket.",YELLOW, plock)
                     output(str(e),RED, plock)
@@ -742,6 +743,7 @@ class DeceptProxy():
                 if self.remote_verify:
                     try: 
                         schro_remote = self.remote_context.wrap_socket(remote_socket,server_hostname=self.remote_verify) 
+                        output("[^_^] Wrapped remote!")
                     except Exception as e:
                         output("[x.x] Unable to verify remote host as '%s' "%self.remote_verify,YELLOW, plock)
                         output(str(e),RED, plock)
@@ -858,8 +860,6 @@ class DeceptProxy():
                     output(str(e),RED)
                     remote_socket.close()
                     sys.exit()
-
-
                  
 
         buf = ""
@@ -902,7 +902,6 @@ class DeceptProxy():
                 else:
                     self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
                     output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),CYAN)
-
 
 
         try:
@@ -1020,10 +1019,10 @@ class DeceptProxy():
                         # will error unless schro_local is a list of sockets (i.e. port range).
                         pass
                         
-                    if resp_count >= self.expected_resp_count:
+                    if self.expected_resp_count > 0 and resp_count >= self.expected_resp_count:
                         break
 
-                if self.dont_kill and resp_count < self.expected_resp_count:
+                if self.dont_kill and (resp_count < self.expected_resp_count or self.expected_resp_count == -1):
                     continue 
             
                 if not byte_count or len(exceptional):
@@ -1595,6 +1594,7 @@ def main():
 
         #next, ints and strings that don't require processing
         proxy.timeout = float(dumb_arg_helper("--timeout",2))
+        proxy.expected_resp_count = int(dumb_arg_helper("--expresp",-1))
 
         # pcap options
         proxy.pcap = dumb_arg_helper("--pcap")
