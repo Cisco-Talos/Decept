@@ -929,7 +929,6 @@ class DeceptProxy():
                     if self.local_end_type == "dtls" and s == schro_local:
                         if not handshake_flag:
                             s.set_accept_state()
-                            print dir(s)
                             s.do_handshake()
                             handshake_flag = True
                         else:
@@ -1408,7 +1407,7 @@ class DeceptProxy():
                 outbound,self.userdata = tmp
 
             #output("[>.>] Post-hook datalen: %d" %len(outbound),CYAN)
-            output(self.userdata)
+            #output(self.userdata)
 
         return outbound
 
