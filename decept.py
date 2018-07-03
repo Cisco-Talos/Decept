@@ -1498,6 +1498,9 @@ def hexdump(src,color,length=16):
     # Licensed with PSF
     # http://code.activestate.com/recipes/142812-hex-dumper
     # with minor edits
+    if not src:
+        return
+
     result=[]
     digits = 4 if isinstance(src,unicode) else 2
     for i in xrange(0,len(src),length):
@@ -1805,11 +1808,12 @@ SSL Options:
 
 Hook Files:
   Optional function definitions for processing data between inbound
-  and outbound endpoints. Look at "inbound_handler"/"outbound_handler" 
-  for more information. 
+  and outbound endpoints. Can pass data between the hooks/proxy with
+  the userdata parameters. Examine "inbound_handler"/"outbound_handler" 
+  for more information.   
 
-  --outhook HOOKFILE | Function Prototype: string outbound_hook(outbound):
-  --inhook  HOOKFILE | Function Prototype: string inbound_hook(inbound):
+  --outhook HOOKFILE | Function Prototype: string outbound_hook(outbound,userdata=""):
+  --inhook  HOOKFILE | Function Prototype: string inbound_hook(inbound,userdata=""):
 
 Host Config File:
   Optionally, instead of specifying a remote host, if you specify a valid
