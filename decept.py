@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/env python2
 #------------------------------------------------------------------
 # Author: Lilith Wyatt <(^,^)>
 #------------------------------------------------------------------
@@ -543,9 +543,6 @@ class DeceptProxy():
             pass
 
 
-
-
-
         #! Todo, no loop for UDP...
         while True:
             if self.local_end_type in ConnectionBased:
@@ -554,9 +551,10 @@ class DeceptProxy():
 
                 #print out conn info
                 if addr:
-                    output("[>.>] Received Connection from %s" % str(addr),GREEN,self.output_lock) 
+                    ts = datetime.now().strftime("%H:%M:%S.%f")
+                    output("[>.>] %s Received Connection from %s" % (ts,str(addr)),GREEN,self.output_lock) 
                 else:
-                    output("[>.>] Received Connection from UnixSocket",GREEN,self.output_lock) 
+                    output("[>.>] %s Received Connection from UnixSocket"%(ts),GREEN,self.output_lock) 
 
 
                 if "windows" in system().lower() or "cygwin" in system().lower():
@@ -790,7 +788,8 @@ class DeceptProxy():
         
             #if data to send to local, do so
             if len(remote_buffer):
-                output("[<.<] Sending %d bytes inbound (%s:%d)." % (len(remote_buffer),self.lhost,self.lport),ORANGE, plock)
+                ts = datetime.now().strftime("%H:%M:%S.%f")
+                output("[<.<] %s Sending %d bytes inbound (%s:%d)." % (ts,len(remote_buffer),self.lhost,self.lport),ORANGE, plock)
                 if self.local_end_type in ConnectionBased: 
                     self.buffered_send(schro_local,remote_buffer)
                 else:   
@@ -892,16 +891,17 @@ class DeceptProxy():
 
             if len(buf):
                 self.pkt_count+=1
+                ts = datetime.now().strftime("%H:%M:%S.%f")
 
                 if self.remote_end_type in ConnectionBased:
                     self.buffered_send(schro_remote,buf)
-                    output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN, plock)
+                    output("[o.o] %s Sent %d bytes to remote (%s:%d->%s:%d)\n" % (ts, len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN, plock)
                 elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
                     sys.stdout.write(buf)      
-                    output("[o.o] Sent %d bytes to remote\n" % (len(buf)),YELLOW)
+                    output("[o.o] %s Sent %d bytes to remote\n" % (ts, len(buf)),YELLOW)
                 else:
                     self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
-                    output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),CYAN)
+                    output("[o.o] %s Sent %d bytes to remote (%s:%d)\n" % (ts, len(buf),self.rhost,self.rport),CYAN)
 
 
         try:
@@ -957,15 +957,17 @@ class DeceptProxy():
 
                         if len(buf):
                             self.pkt_count+=1
+    
+                            ts = datetime.now().strftime("%H:%M:%S.%f")
                             if self.remote_end_type in ConnectionBased:
                                 self.buffered_send(schro_remote,buf)
-                                output("[o.o] Sent %d bytes to remote (%s:%d->%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN)
+                                output("[o.o] %s Sent %d bytes to remote (%s:%d->%s:%d)\n" % (ts, len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN)
                             elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
                                 sys.stdout.write(buf)      
-                                output("[o.o] Sent %d bytes to remote\n" % (len(buf)),CYAN)
+                                output("[o.o] %s Sent %d bytes to remote\n" % (ts, len(buf)),CYAN)
                             else:
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
-                                output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),CYAN)
+                                output("[o.o] %s Sent %d bytes to remote (%s:%d)\n" % (ts, len(buf),self.rhost,self.rport),CYAN)
                         plock.release()
 
                     if s == schro_remote:
@@ -980,16 +982,17 @@ class DeceptProxy():
 
                         if len(buf): 
                             self.pkt_count+=1
+                            ts = datetime.now().strftime("%H:%M:%S.%f")
 
                             if self.local_end_type in ConnectionBased: 
                                 self.buffered_send(schro_local,buf)
-                                output("[o.o] Sent %d bytes to local (%s:%d<-%s:%d)\n" % (len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),YELLOW)
+                                output("[o.o] %s Sent %d bytes to local (%s:%d<-%s:%d)\n" % (ts, len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),YELLOW)
                             elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
                                 sys.stdout.write(buf)      
-                                output("[o.o] Sent %d bytes to local\n" % (len(buf),YELLOW))
+                                output("[o.o] %s Sent %d bytes to local\n" % (ts, len(buf),YELLOW))
                             else:   
                                 self.buffered_sendto(schro_local,buf,(self.lhost,self.lport))
-                                output("[o.o] Sent %d bytes to local from %s:%d\n" % (len(buf),self.rhost,self.rport),YELLOW)
+                                output("[o.o] %s Sent %d bytes to local from %s:%d\n" % (ts, len(buf),self.rhost,self.rport),YELLOW)
                             resp_count+=1
                         plock.release()
 
@@ -1007,9 +1010,10 @@ class DeceptProxy():
                             if len(buf):
                                 plock.acquire()
                                 self.pkt_count+=1
+                                ts = datetime.now().strftime("%H:%M:%S.%f")
                                 active_udp = s # so we know where to throw packets back to 
                                 self.buffered_sendto(schro_remote,buf,(self.rhost,self.rport))
-                                output("[o.o] Sent %d bytes to remote (%s:%d)\n" % (len(buf),self.rhost,self.rport),GREEN)
+                                output("[o.o] %s Sent %d bytes to remote (%s:%d)\n" % (ts,len(buf),self.rhost,self.rport),GREEN)
 
                             plock.release()
 
