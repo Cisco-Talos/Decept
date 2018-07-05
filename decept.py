@@ -1631,29 +1631,31 @@ def main():
         
 
         # look for and parse the files first...
-        inbound_hook = dumb_arg_helper("--inhook")
-        outbound_hook = dumb_arg_helper("--outhook")
-
-
-        if inbound_hook or outbound_hook:
+        hookfile = dumb_arg_helper("--hookfile")
+        
+        if hookfile:
             import imp
-
             # if inbound_hook == outbound_hook file, no biggie
-            if inbound_hook:
+            try:
+                imp.load_source("hooks",hookfile) 
                 try: 
-                    imp.load_source("in_hook",inbound_hook) 
-                    proxy.inbound_hook = sys.modules["in_hook"].inbound_hook
+                    proxy.inbound_hook = sys.modules["hooks"].inbound_hook
+                    output("Loaded inbound_hook from %s" % hookfile,YELLOW)
                 except:
-                    output("Could not import inbound hook: %s" % inbound_hook,YELLOW)
+                    pass
 
-
-            if outbound_hook:
                 try: 
-                    imp.load_source("out_hook",outbound_hook) 
-                    proxy.outbound_hook = sys.modules["out_hook"].outbound_hook
+                    proxy.outbound_hook = sys.modules["hooks"].outbound_hook
+                    output("Loaded outbound_hook from %s" % hookfile,YELLOW)
                 except:
-                    output("Could not import outbound hook: %s" % outbound_hook,YELLOW)
-              
+                    pass
+                
+            except Exception as e:
+                print e
+                pass
+                
+    
+                
 
         for arg in sys.argv[4:]:
             if "-" in arg and arg not in ValidCmdlineOptions: 
@@ -1813,11 +1815,12 @@ SSL Options:
 Hook Files:
   Optional function definitions for processing data between inbound
   and outbound endpoints. Can pass data between the hooks/proxy with
-  the userdata parameters. Examine "inbound_handler"/"outbound_handler" 
-  for more information.   
+  the userdata parameters. Look at `hooks` folder for some examples/
+  prebuilt useful things. 
 
-  --outhook HOOKFILE | Function Prototype: string outbound_hook(outbound,userdata=""):
-  --inhook  HOOKFILE | Function Prototype: string inbound_hook(inbound,userdata=""):
+  --hookfile <file> | Functions imported:
+        string outbound_hook(outbound,userdata=""):
+        string inbound_hook(outbound,userdata=""):
 
 Host Config File:
   Optionally, instead of specifying a remote host, if you specify a valid
@@ -1855,13 +1858,14 @@ ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
                        "--pcap","--pps","--snaplen",
                        "--fuzzer","--dumpraw","-l","-r",
                        "--l2_filter","--l2_mtu","--L2_forward", 
-                       "--L3_raw","--inhook","--outhook",
+                       "--L3_raw",
+                       "--hookfile",
                        "--rbind_addr","--rbind_port",
                        "--quiet","--dont_kill","--udppr",
                        "--expect","--really",
                        "--lcert","--lkey","--rcert","--rkey",
                        "--rverify","--poison","--poison_int",
-                       "--expresp"]
+                       "--expresp",""]
 
 #####################################
 ## Global header for pcap file
