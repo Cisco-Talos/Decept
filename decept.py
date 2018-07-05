@@ -604,7 +604,7 @@ class DeceptProxy():
         self.thread_id = multiprocessing.current_process().name.replace("Process","session")
 
         # use for passing data between inbound and outbound handlers. 
-        self.userdata = ""
+        self.userdata = []
 
         # used with hostconf_dict
         initial_buff = ""
@@ -1379,14 +1379,9 @@ class DeceptProxy():
                 f.write(inbound)
 
         if self.inbound_hook:
+
             #output("[<.<] Pre-hook datalen: %d" %len(inbound),CYAN)
-            tmp = self.inbound_hook(inbound,self.userdata)
-
-            if isinstance(tmp,basestring): 
-                inbound = tmp
-            else:
-                inbound,self.userdata = tmp 
-
+            inbound = self.inbound_hook(inbound,self.userdata)
             #output("[<.<] Pre-hook datalen: %d" %len(inbound),CYAN)
 
         return inbound
@@ -1403,15 +1398,8 @@ class DeceptProxy():
 
         if self.outbound_hook:
             #output("[>.>] Pre-hook datalen: %d" %len(outbound),CYAN)
-            tmp = self.outbound_hook(outbound,self.userdata)
-    
-            if isinstance(tmp,basestring):
-                outbound = tmp 
-            else:
-                outbound,self.userdata = tmp
-
+            outbound = self.outbound_hook(outbound,self.userdata)
             #output("[>.>] Post-hook datalen: %d" %len(outbound),CYAN)
-            #output(self.userdata)
 
         return outbound
 
@@ -1818,9 +1806,9 @@ Hook Files:
   the userdata parameters. Look at `hooks` folder for some examples/
   prebuilt useful things. 
 
-  --hookfile <file> | Functions imported:
-        string outbound_hook(outbound,userdata=""):
-        string inbound_hook(outbound,userdata=""):
+  --hookfile <file> | Functions imported from file:
+        string outbound_hook(outbound,userdata=[]):
+        string inbound_hook(outbound,userdata=[]):
 
 Host Config File:
   Optionally, instead of specifying a remote host, if you specify a valid
@@ -2125,3 +2113,4 @@ def create_ebpf_filter(ip,port,proto=""):
 
 if __name__ == "__main__":
     main() 
+
