@@ -13,7 +13,7 @@ work_dir = %s
 
 # for printing purposes only 
 ascii_threshold = .60
-ascii_flag = False
+ascii_flag = True
 
 request_dict = {}
 saved_dict = {}
@@ -23,8 +23,6 @@ PORT = ""
 TIMEOUT = .3
 
 changes_flag = False
-
-
 
 def main(): 
     cmd_dict = {
@@ -116,6 +114,8 @@ def sethost(ip,port=""):
        
   
 def set_print_mode(mode):
+    global ascii_flag
+
     if mode == "ascii":
         ascii_flag = True
     elif mode == "binary":
