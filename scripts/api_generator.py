@@ -126,8 +126,8 @@ def main(dumpraw_dir,delim="",indexes=""):
             continue
         with open(fname,"wb") as f: 
             work_dir = outdir + "_workdir"
-            template = template.replace("inp_dir = %s","inp_dir = \"%s\""%outdir)
-            template = template.replace("work_dir = %s","work_dir = \"%s\""%work_dir)
+            template = template.replace("inp_dir = %s","inp_dir = \"%s\""%os.path.abspath(outdir))
+            template = template.replace("work_dir = %s","work_dir = \"%s\""%os.path.abspath(work_dir))
             f.write(template)
             break
         print "[>.>]; Why are there 100 api_replayers here....?"

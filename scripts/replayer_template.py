@@ -57,7 +57,7 @@ def main():
     except:
         try:
             load_request_dir(inp_dir)
-            os.mkdir(work_dir)
+            new_workdir(work_dir)
         except:
             print "[x.x] Unable to load %s or %s"%(work_dir,inp_dir)
             sys.exit()
@@ -132,7 +132,7 @@ def send_request(request_id):
     try:
         sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
         sock.connect((IP,PORT))
-        sock.setttimeout(TIMEOUT)
+        sock.settimeout(TIMEOUT)
     except:
         print "[x.x] Unable to connect to %s:%d"%(IP,PORT)
         print "Consider using 'sethost' cmd to fix." 
@@ -144,7 +144,7 @@ def send_request(request_id):
     sock.send(req)
     
     tmp = ""
-    ret += tmp
+    ret = ""
     while True:
         try:
             tmp = sock.recv(65535)        
@@ -154,12 +154,12 @@ def send_request(request_id):
             break
 
     if len(ret):
-        print "[<.<] Got %d bytes~"
-        if len(ret) > 400: 
-            ret = ret[0:400]
+        print "[<.<] Got %d bytes~" % len(ret)
+        if len(ret) > 0x1000: 
+            ret = ret[0:0x1000]
         print "\\x" + "\\x".join(["%02x"%ord(y) for y in ret])
         print "[...]"
-            
+
 
 def rename_request(old_request_id,new_request_id):
     global changes_flag
@@ -169,8 +169,8 @@ def rename_request(old_request_id,new_request_id):
         filename = os.path.join(work_dir,old_request_id)
         os.remove(filename)
         changes_flag = True
-    except:
-        print "Could not remove old request %s"%old_rquest_id
+    except Exception as e:
+        print "Could not remove old request %s (%s)"%(old_request_id,e)
         return
 
     save_request(new_request_id,val)
@@ -207,7 +207,7 @@ def print_request(request_id,truncate=False):
     except KeyError:
         print "[x.x] Request %s not found in request_dict"%request_id
     
-    if truncate:
+    if truncate and len(req) > 0x1000:
         old_len = len(req)
         req = req[0:200]
         
@@ -218,9 +218,9 @@ def print_request(request_id,truncate=False):
         else:
             buf+="\\x%02x"%ord(char)
     print "-------------------"
-    print "%s %s" % (request_id,buf)          
-    if truncate:
-        print "[...] (200/%d bytes)" % old_len
+    print "%s%s %s %s" % (CYAN,request_id,CLEAR,buf)          
+    if len(req) > 0x1000:
+        print "%s[...] (0x1000/%d bytes)%s" % (YELLOW,old_len,CLEAR)
 
 
 def chain_request():
@@ -295,6 +295,16 @@ def print_help():
 
     print ret
        
+#colors
+RED='\033[31m'
+ORANGE='\033[91m'
+GREEN='\033[92m'
+LIME='\033[99m'
+YELLOW='\033[93m'
+BLUE='\033[94m'
+PURPLE='\033[95m'
+CYAN='\033[96m'
+CLEAR='\033[00m' 
 
 if __name__ == "__main__":
 
