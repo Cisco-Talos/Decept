@@ -30,6 +30,7 @@ def main():
         "send":send_request,
         "save":save_request,
         "rename":rename_request,
+        "reload":reload_request,
         "print":print_request, 
         "exit":cleanup,
         "quit":cleanup,
@@ -150,6 +151,8 @@ def send_request(request_id):
             tmp = sock.recv(65535)        
             if tmp:
                 ret+=tmp
+            else:
+                break
         except:
             break
 
@@ -157,8 +160,19 @@ def send_request(request_id):
         print "[<.<] Got %d bytes~" % len(ret)
         if len(ret) > 0x1000: 
             ret = ret[0:0x1000]
-        print "\\x" + "\\x".join(["%02x"%ord(y) for y in ret])
+
+        buf = "" 
+        for char in ret:
+            if ord(char) >= 0x30 and ord(char) <= 122 and ascii_flag:
+                buf+=char
+            else:
+                buf+="\\x%02x"%ord(char)
+
+        print "\\x" + "\\x".join(["%02x"%ord(y) for y in buf])
         print "[...]"
+
+    print "[!-!] Saving response as %s_resp"%(request_id)
+    save_request("%s_resp"%request_id,buf)
 
 
 def rename_request(old_request_id,new_request_id):
@@ -182,8 +196,18 @@ def save_request(request_id,request_value):
     global request_dict
     global changes_flag
 
+    filtered_request = ""
+    escape_loc = request_value.find("\\x")
+    # all chars should be escaped if not ascii, so no slashes shuold be in buf. 
+    while escape_loc > -1:
+        filtered_request += request_value[:escape_loc] 
+        filtered_request += chr(int(request_value[escape_loc+2:escape_loc+4],16))
+        request_value = request_value[escape_loc+4:]
+        escape_loc = request_value.find("\\x")
+    filtered_request+=request_value
+        
     try:
-        request_dict[request_id] = request_value
+        request_dict[request_id] = filtered_request
     except Exception as e:
         print "[x.x] Could not add request %s to request_dict, returning."%request_id
         return
@@ -206,6 +230,7 @@ def print_request(request_id,truncate=False):
         req = request_dict[request_id]
     except KeyError:
         print "[x.x] Request %s not found in request_dict"%request_id
+        return
     
     if truncate and len(req) > 0x1000:
         old_len = len(req)
@@ -253,6 +278,9 @@ def new_workdir(directory,force=False):
             print "[;_;] Unable to save request %s to %s (%e)"%(req,directory,e)
             if not force:
                 return
+
+def reload_request():
+    load_request_dir(work_dir)
 
 def load_request_dir(directory):
     for f in os.listdir(directory):
