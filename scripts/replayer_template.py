@@ -168,8 +168,7 @@ def send_request(request_id):
             else:
                 buf+="\\x%02x"%ord(char)
 
-        print "\\x" + "\\x".join(["%02x"%ord(y) for y in buf])
-        print "[...]"
+        print buf
 
     print "[!-!] Saving response as %s_resp"%(request_id)
     save_request("%s_resp"%request_id,buf)
