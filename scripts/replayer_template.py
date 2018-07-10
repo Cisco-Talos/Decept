@@ -1,6 +1,5 @@
 #!/usr/bin/env python
 import socket
-import code
 import sys
 import os
 
@@ -186,13 +185,18 @@ def send_request(request_id):
         print "[x.x] No response..."
 
 
-def rename_request(old_request_id,new_request_id):
+def copy_request(old_request_id,new_request_id):
+    rename_request(old_request_id,new_request_id,copyOnly=True):
+
+
+def rename_request(old_request_id,new_request_id,copyOnly=False):
     global changes_flag
     try:
         val = request_dict[old_request_id]
         del request_dict[old_request_id]
         filename = os.path.join(work_dir,old_request_id)
-        os.remove(filename)
+        if not copyOnly:
+            os.remove(filename)
         changes_flag = True
     except Exception as e:
         print "Could not remove old request %s (%s)"%(old_request_id,e)
@@ -417,6 +421,7 @@ def print_help():
     "save":save_request(request_id,request) - Adds request to the request_dict 
                                               and also writes a file to the workdir.
     "rename":rename_request(old,new)        - Moves request in request_dict and filesystem. 
+    "del":remove_request(request)           - Removes request.
     "print":print_request(request_id)       - Prints the given request for <request_id>
     "exit":cleanup()                        - Obv.
     "chain":chain_request(request_id1,
