@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 import socket
+import code
 import sys
 import os
 
@@ -31,6 +32,7 @@ def main():
         "save":save_request,
         "rename":rename_request,
         "reload":reload_request,
+        "del":remove_request,
         "print":print_request, 
         "exit":cleanup,
         "quit":cleanup,
@@ -40,6 +42,8 @@ def main():
         "load":load_request,
         "print_mode":set_print_mode,
         "sethost":sethost,
+        "pasteraw":paste_request,
+        "cmp":cmp_requests,
         "help":print_help,
         "?":print_help,
     }
@@ -71,7 +75,7 @@ def main():
 
     while True:
         try:
-            inp = filter(None,raw_input("[^.^]> ").split(" "))
+            inp = filter(None,raw_input("%s[^.^]> %s"%(PURPLE,CLEAR)).split(" "))
         except:
             print ""
             continue 
@@ -83,11 +87,17 @@ def main():
             args = inp[1:]
             cmd_dict[cmd](*args)
         except KeyError:
-            print "[x.x] Invalid command: %s" % inp
+            try:
+                os.system(" ".join(inp))
+            except Exception as e:
+                print e
+                print "[x.x] Invalid command: %s" % inp
         except KeyboardInterrupt:
             continue
-        except TypeError:
+        except TypeError as e:
             print "[?.?] Wrong num of params for command %s"%cmd
+            print e
+    
         except Exception as e:
             print e
     
@@ -170,8 +180,10 @@ def send_request(request_id):
 
         print buf
 
-    print "[!-!] Saving response as %s_resp"%(request_id)
-    save_request("%s_resp"%request_id,buf)
+        print "[!-!] Saving response as %s_resp"%(request_id)
+        save_request("%s_resp"%request_id,buf)
+    else:
+        print "[x.x] No response..."
 
 
 def rename_request(old_request_id,new_request_id):
@@ -231,9 +243,9 @@ def print_request(request_id,truncate=False):
         print "[x.x] Request %s not found in request_dict"%request_id
         return
     
-    if truncate and len(req) > 0x1000:
+    if truncate and len(req) > 50:
         old_len = len(req)
-        req = req[0:200]
+        req = req[0:50]
         
     buf = ""
     for char in req:
@@ -242,9 +254,9 @@ def print_request(request_id,truncate=False):
         else:
             buf+="\\x%02x"%ord(char)
     print "-------------------"
-    print "%s%s %s %s" % (CYAN,request_id,CLEAR,buf)          
-    if len(req) > 0x1000:
-        print "%s[...] (0x1000/%d bytes)%s" % (YELLOW,old_len,CLEAR)
+    if len(req) == 50:
+        buf+="%s[...] (50/%d bytes)%s" % (YELLOW,old_len,CLEAR)
+    print "%s%s\n%s%s" % (CYAN,request_id,CLEAR,buf)          
 
 
 def chain_request():
@@ -294,6 +306,105 @@ def load_request(request_file):
     except Exception as e:
         print "[x.x] Unable to load request %s (%s)" % (request_name,e)
 
+def remove_request(request_name):
+    try:
+        del request_dict[request_name]
+        print "[!.!] %s removed from request_dict" % request_name
+    except Exception as e:
+        print "[?.?] Unable to remove %s: %s"%(request_name,e)
+        pass
+
+    try:
+        os.remove(os.path.join(work_dir,request_name))
+    except:
+        pass
+
+def cmp_requests(req1,req2):
+    try:
+        r1 = request_dict[req1] 
+        r2 = request_dict[req2] 
+    except Exception as e:
+        print "[?.?] Could not find one or more reqs: %s, %s"%(req1,req2)
+        print e
+        return    
+
+    if len(r1) > len(r2):
+        longer = r1     
+        shorter = r2
+    else:
+        longer = r2
+        shorter = r1 
+    print "%sLen(%s): %d, Len(%s): %d%s"%(GREEN,req1,len(r1),req2,len(r2),CLEAR) 
+        
+    buf = ""
+    i = 0
+    j = 0
+    y = 0
+    orig_diff = 0
+    while i < len(shorter):    
+        for x in range(len(shorter),i+4,-1): 
+            #print "start i(%d),j(%d),y(%d),x(%d)"%(i,j,y,x)
+            match = longer[j:].find(shorter[i:x])
+            if match == 0:
+                #print YELLOW + "Found match " + CLEAR + "ind(%d) %s\nin\n%s"%(match,repr(shorter[i:x]),repr(longer[j:]))
+
+                buf += GREEN
+                for y in range(i,x):
+                    if ord(shorter[y]) >= 0x30 and ord(shorter[y]) <= 122:
+                        buf+=shorter[y]
+                    else:
+                        buf+="\\x%02x"%ord(shorter[y])
+                j+=(x-i)
+                i+=(x-i)
+                break
+
+        if i >= len(shorter) or j > len(shorter):
+            break  
+                
+        
+        # no min 4 byte match
+        buf+=YELLOW
+        #print "break i(%d),j(%d),y(%d),x(%d)"%(i,j,y,x)
+        #print "stop match ind(%d) %s\nin\n%s"%(match,repr(shorter[i:]),repr(longer[j:]))
+        for q in range(0,match+1):
+            if ord(longer[j+q]) >= 0x30 and ord(longer[j+q]) <= 122:
+                buf+=longer[j+q]
+            else:
+                buf+="\\x%02x"%ord(longer[j+q])
+            j+=match
+            j+=1
+
+        i+=1
+        if j >= len(shorter):
+            #print "i(%d),j(%d),lenshort(%d)"%(i,j,len(shorter))
+            break
+    
+    buf += CYAN
+    s = len(shorter)
+    for i in range(s,len(longer)):
+        if ord(longer[i]) >= 0x30 and ord(longer[i]) <= 122:
+            buf+=longer[i]
+        else:
+            buf+="\\x%02x"%ord(longer[i])
+    buf += CLEAR
+    
+    print "[^_^] Request Diff: (Key:%sMATCH,%sDIFF,%sAPPEND)\n%s%s" % (GREEN,YELLOW,CYAN,buf,CLEAR)
+        
+
+def paste_request(request_name):
+    print "[!.!] Being pasting request"
+    print "Newlines will be ignored, use \\x0a for newlines in bytestream" 
+    print "Ctrl-C to finish input"
+
+    buf = ""
+    while True: 
+        try:
+            buf+=raw_input("")
+        except KeyboardInterrupt:
+            break
+
+    save_request(request_name,buf)
+
 def usage():
     print "[?.?] Usage: %s <ip> <port>" 
     sys.exit()
@@ -318,6 +429,9 @@ def print_help():
     "print_mode":set_print_mode(mode)       - Controls how the print/list commands operate.
                                               Available modes: ("binary"||"ascii") 
     "sethost":sethost(ip,port)              - Change remote endpoint to <ip>:<port>
+    "pasteraw":paste_request(request_name)  - Enter mode to input raw bytes till CTRL+C 
+                                              and save as <request_name>
+    "cmp":cmp_requests(r1,r2)               - Prints out color diff of requests r1,r2
     '''
 
     print ret
@@ -335,7 +449,7 @@ CLEAR='\033[00m'
 
 if __name__ == "__main__":
 
-    print "<(^_^)> Decept Autogen'ed API replayer thing:"
+    print CYAN +  "<(^_^)> Decept Autogen'ed API replayer thing:" + CLEAR
     if len(sys.argv) < 3:
         usage() 
     main()
