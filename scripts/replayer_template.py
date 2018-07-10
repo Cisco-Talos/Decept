@@ -30,6 +30,7 @@ def main():
         "send":send_request,
         "save":save_request,
         "rename":rename_request,
+        "copy":copy_request,
         "reload":reload_request,
         "del":remove_request,
         "print":print_request, 
@@ -186,7 +187,7 @@ def send_request(request_id):
 
 
 def copy_request(old_request_id,new_request_id):
-    rename_request(old_request_id,new_request_id,copyOnly=True):
+    rename_request(old_request_id,new_request_id,copyOnly=True)
 
 
 def rename_request(old_request_id,new_request_id,copyOnly=False):
