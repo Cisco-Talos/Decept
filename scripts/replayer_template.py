@@ -7,7 +7,7 @@ import os
 inp_dir = %s 
 
 # after we've loaded > 1 time, everything is saved to here:
-work_dir = %s 
+work_dir = %s
 
 # work_dir is overwritten if the --workdir param is given
 
@@ -21,14 +21,19 @@ saved_dict = {}
 IP = ""
 PORT = ""
 TIMEOUT = .3
+socket_mode = "kill"
+sock = None
 
 changes_flag = False
 
 def main(): 
     cmd_dict = {
         "list":list_request,
-        "send":send_request,
         "save":save_request,
+        "send_ser":server_send_bytes,
+        "send":client_send_bytes,
+        "send_cli":client_send_bytes,
+        "socket_mode":set_socket_mode,
         "rename":rename_request,
         "copy":copy_request,
         "reload":reload_request,
@@ -36,7 +41,6 @@ def main():
         "print":print_request, 
         "exit":cleanup,
         "quit":cleanup,
-        "chain":chain_request,
         "new_workdir":new_workdir,
         "load_dir":load_request_dir,
         "load":load_request,
@@ -86,7 +90,9 @@ def main():
             cmd = inp[0]
             args = inp[1:]
             cmd_dict[cmd](*args)
-        except KeyError:
+        except KeyError as e:
+            print e
+        
             try:
                 os.system(" ".join(inp))
             except Exception as e:
@@ -97,7 +103,6 @@ def main():
         except TypeError as e:
             print "[?.?] Wrong num of params for command %s"%cmd
             print e
-    
         except Exception as e:
             print e
     
@@ -114,11 +119,11 @@ def sethost(ip,port=""):
             print "[;_;] Bad ip/port"
 
     try:
-        IP = sys.argv[1]
+        IP = ip
         if len(IP.split(".")) != 4:
             print "[>.>] Invalid IP given"
             return
-        PORT = int(sys.argv[2])
+        PORT = int(port)
     except:
         print "[x.x] Invalid params given to sethost!"
         return
@@ -139,21 +144,71 @@ def list_request():
     for req in req_list:
         print_request(req,truncate=True)
 
-def send_request(request_id):
-    try:
-        sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
-        sock.connect((IP,PORT))
-        sock.settimeout(TIMEOUT)
-    except:
-        print "[x.x] Unable to connect to %s:%d"%(IP,PORT)
-        print "Consider using 'sethost' cmd to fix." 
-        return
+
+# connect to server and then send commands.
+def client_send_bytes(*request_ids):
+    send_bytes("client",*request_ids)    
+
+# wait for client to connect before sending bytes.
+def server_send_bytes(*request_ids):
+    send_bytes("server",*request_ids)    
+
+def set_socket_mode(mode):
+    global socket_mode
+    if mode == "persist":
+        socket_mode = "persist"
+    elif mode == "kill":
+        socket_mode = "kill"
+    else:
+        print "invalid set_socket_mode args: %s" % (mode,)
+
+def send_bytes(mode,*request_ids):
+    global sock
+
+    if socket_mode != "persist" or sock == None :
+        if mode == "client": 
+            try:
+                sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
+                sock.connect((IP,PORT))
+                sock.settimeout(TIMEOUT)
+            except:
+                print "[x.x] Unable to connect to %s:%d"%(IP,PORT)
+                print "Consider using 'sethost' cmd to fix." 
+                return
+
+        elif mode == "server":
+            serv_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
+            serv_sock.bind((IP,PORT))
+            print "Bound to %s:%d"%(IP,PORT)
+            serv_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+            serv_sock.listen(1)
+            sock,cli_addr = serv_sock.accept()
+            print "[1.1] Connection bekommt: (%s:%d)"%(cli_addr)
+            # we recv first if server sock. Might need cmdline flag later
+            # if/when we run into a server socket that needs to send first.
+            get_bytes(sock)
+        else:
+            print "[?.?] Invalid send_bytes mode: %s" % mode
+            return
+
+
+    for request_id in request_ids:
+        req = request_dict[request_id]
+        print CYAN + "[>.>] Sending %s %d bytes~"%(request_id,len(req))
+        try:
+            sock.send(req)
+            resp = get_bytes(sock)
+        except Exception as e:
+            if "Broken pipe" in e:
+                sock = None
+            else:
+                print e
+
+        #print "[!-!] Saving response as %s_resp"%(request_id)
+        #save_request("%s_resp"%request_id,buf)
 
     
-    req = request_dict[request_id]
-    print "[>.>] Sending %d bytes~"%len(req)
-    sock.send(req)
-    
+def get_bytes(sock):
     tmp = ""
     ret = ""
     while True:
@@ -167,7 +222,7 @@ def send_request(request_id):
             break
 
     if len(ret):
-        print "[<.<] Got %d bytes~" % len(ret)
+        print YELLOW + "[<.<] Got %d bytes~" % len(ret)
         if len(ret) > 0x1000: 
             ret = ret[0:0x1000]
 
@@ -177,18 +232,14 @@ def send_request(request_id):
                 buf+=char
             else:
                 buf+="\\x%02x"%ord(char)
-
         print buf
 
-        print "[!-!] Saving response as %s_resp"%(request_id)
-        save_request("%s_resp"%request_id,buf)
     else:
         print "[x.x] No response..."
 
 
 def copy_request(old_request_id,new_request_id):
     rename_request(old_request_id,new_request_id,copyOnly=True)
-
 
 def rename_request(old_request_id,new_request_id,copyOnly=False):
     global changes_flag
@@ -263,9 +314,6 @@ def print_request(request_id,truncate=False):
         buf+="%s[...] (50/%d bytes)%s" % (YELLOW,old_len,CLEAR)
     print "%s%s\n%s%s" % (CYAN,request_id,CLEAR,buf)          
 
-
-def chain_request():
-    print "[^_^] Not implimented, lol."
 
 def cleanup(): 
     if changes_flag:
@@ -404,7 +452,12 @@ def paste_request(request_name):
     buf = ""
     while True: 
         try:
-            buf+=raw_input("")
+            tmp = raw_input("")
+            tmp = tmp.rstrip().lstrip()
+            if tmp.startswith("#"):
+                continue
+            if len(tmp):
+                buf+=tmp
         except KeyboardInterrupt:
             break
 
@@ -417,27 +470,29 @@ def usage():
 def print_help():
     ret = '''\
     <(^_^)> Decept Autogen'ed API replayer thing:
-    "list":list_request()                   - Prints out all available API requests.
-    "send":send_request(request_id)         - Sends the api request. Will cause a socket connect
-    "save":save_request(request_id,request) - Adds request to the request_dict 
-                                              and also writes a file to the workdir.
-    "rename":rename_request(old,new)        - Moves request in request_dict and filesystem. 
-    "del":remove_request(request)           - Removes request.
-    "print":print_request(request_id)       - Prints the given request for <request_id>
-    "exit":cleanup()                        - Obv.
-    "chain":chain_request(request_id1,
-                          request_id2,...)  - ??? Not sure how I want this done yet.
-    "new_workdir":new_workdir(directory)    - Writes all request entries to <directory> and 
-                                              switches work_dir to <directory>
-    "load_dir":load_request_dir(directory)  - Loads all requests from <directory> into the
-                                              current request_dict.
-    "load":load_request(file)               - Loads a single request into the request_dict
-    "print_mode":set_print_mode(mode)       - Controls how the print/list commands operate.
-                                              Available modes: ("binary"||"ascii") 
-    "sethost":sethost(ip,port)              - Change remote endpoint to <ip>:<port>
-    "pasteraw":paste_request(request_name)  - Enter mode to input raw bytes till CTRL+C 
-                                              and save as <request_name>
-    "cmp":cmp_requests(r1,r2)               - Prints out color diff of requests r1,r2
+    "list":list_request()                         - Prints out all available API requests.
+    "send_server":server_send_bytes(*request_ids) - Sends the requests to a server (connecting as client)
+    "send_client":client_send_bytes(*request_ids) - Sends a requests to a client (after waiting for the connect/first packet.)
+    "socket_mode":set_socket_mode(mode)           - Toggle killing of sockets after sending all reqs.
+                                                    Available: {"persist","kill"} (default => kill) 
+    "save":save_request(request_id,request)       - Adds request to the request_dict 
+                                                    and also writes a file to the workdir.
+    "rename":rename_request(old,new)              - Moves request in request_dict and filesystem. 
+    "del":remove_request(request)                 - Removes request.
+    "print":print_request(request_id)             - Prints the given request for <request_id>
+    "exit":cleanup()                              - Obv.
+    "new_workdir":new_workdir(directory)          - Writes all request entries to <directory> and 
+                                                    switches work_dir to <directory>
+    "load_dir":load_request_dir(directory)        - Loads all requests from <directory> into the
+                                                    current request_dict.
+    "load":load_request(file)                     - Loads a single request into the request_dict
+    "print_mode":set_print_mode(mode)             - Controls how the print/list commands operate.
+                                                    Available modes: {"binary","ascii"} (default => ascii) 
+    "sethost":sethost(ip,port)                    - Change remote endpoint to <ip>:<port>
+    "pasteraw":paste_request(request_name)        - Enter mode to input raw bytes till CTRL+C 
+                                                    and save as <request_name>
+    "cmp":cmp_requests(r1,r2)                     - Prints out color diff of requests r1,r2
+
     '''
 
     print ret
