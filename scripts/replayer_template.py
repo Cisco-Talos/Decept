@@ -1,5 +1,7 @@
 #!/usr/bin/env python
+import readline
 import socket
+import glob
 import sys
 import os
 
@@ -7,7 +9,7 @@ import os
 inp_dir = %s 
 
 # after we've loaded > 1 time, everything is saved to here:
-work_dir = %s
+work_dir = %s 
 
 # work_dir is overwritten if the --workdir param is given
 
@@ -20,19 +22,21 @@ saved_dict = {}
 
 IP = ""
 PORT = ""
-TIMEOUT = .3
+TIMEOUT = .5
 socket_mode = "kill"
 sock = None
 
 changes_flag = False
 
 def main(): 
+
     cmd_dict = {
         "list":list_request,
         "save":save_request,
-        "send_ser":server_send_bytes,
+        "sendser":server_send_bytes,
         "send":client_send_bytes,
-        "send_cli":client_send_bytes,
+        "edit":edit_request,
+        "send":client_send_bytes,
         "socket_mode":set_socket_mode,
         "rename":rename_request,
         "copy":copy_request,
@@ -51,6 +55,9 @@ def main():
         "help":print_help,
         "?":print_help,
     }
+
+
+
 
     global work_dir
     sethost(sys.argv[1],sys.argv[2])
@@ -74,7 +81,9 @@ def main():
     if len(request_dict) == 0:
         print "[x.x] Unable to read in any requests from %s" % inp_dir
         sys.exit()
-    
+
+
+    tab_complete = TabCompleter(cmd_dict,request_dict)
     print "[^_^] Loaded %d requests"%len(request_dict)
 
     while True:
@@ -164,8 +173,9 @@ def set_socket_mode(mode):
 
 def send_bytes(mode,*request_ids):
     global sock
+    serv_sock = None
 
-    if socket_mode != "persist" or sock == None :
+    if socket_mode != "persist" or sock == None:
         if mode == "client": 
             try:
                 sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
@@ -177,13 +187,16 @@ def send_bytes(mode,*request_ids):
                 return
 
         elif mode == "server":
-            serv_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
-            serv_sock.bind((IP,PORT))
-            print "Bound to %s:%d"%(IP,PORT)
-            serv_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
-            serv_sock.listen(1)
+            if serv_sock == None:
+                print "boop"
+                serv_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
+                serv_sock.bind((IP,PORT))
+                print "Bound to %s:%d"%(IP,PORT)
+                serv_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
+                serv_sock.listen(1)
             sock,cli_addr = serv_sock.accept()
             print "[1.1] Connection bekommt: (%s:%d)"%(cli_addr)
+            sock.settimeout(TIMEOUT)
             # we recv first if server sock. Might need cmdline flag later
             # if/when we run into a server socket that needs to send first.
             get_bytes(sock)
@@ -206,6 +219,15 @@ def send_bytes(mode,*request_ids):
 
         #print "[!-!] Saving response as %s_resp"%(request_id)
         #save_request("%s_resp"%request_id,buf)
+    
+    if socket_mode != "persist":
+        sock.close()
+        if mode == "server":
+            sock.close()
+            serv_sock.close()
+   
+         
+
 
     
 def get_bytes(sock):
@@ -237,6 +259,10 @@ def get_bytes(sock):
     else:
         print "[x.x] No response..."
 
+
+def edit_request(request_id,start_index,new_val):
+    pass
+   
 
 def copy_request(old_request_id,new_request_id):
     rename_request(old_request_id,new_request_id,copyOnly=True)
@@ -312,7 +338,7 @@ def print_request(request_id,truncate=False):
     print "-------------------"
     if len(req) == 50:
         buf+="%s[...] (50/%d bytes)%s" % (YELLOW,old_len,CLEAR)
-    print "%s%s\n%s%s" % (CYAN,request_id,CLEAR,buf)          
+    print "%s%s (%d bytes (0x%lx))\n%s%s" % (CYAN,request_id,len(req),len(req),CLEAR,buf)          
 
 
 def cleanup(): 
@@ -461,7 +487,10 @@ def paste_request(request_name):
         except KeyboardInterrupt:
             break
 
-    save_request(request_name,buf)
+    if len(buf):
+        save_request(request_name,buf)
+    else:
+        print "[1.1] No-go on saving of %s" % request_name
 
 def usage():
     print "[?.?] Usage: %s <ip> <port>" 
@@ -507,6 +536,63 @@ BLUE='\033[94m'
 PURPLE='\033[95m'
 CYAN='\033[96m'
 CLEAR='\033[00m' 
+
+class TabCompleter(object):
+
+    def __init__(self,options,requests):
+        self.cmdoptions = sorted(options) 
+        self.requests = sorted(requests)
+        self.matches = []
+        self.text = ""
+
+        readline.parse_and_bind('tab: complete')
+        readline.parse_and_bind('set editing-mode vi')
+        readline.set_completer(self.tabcomplete)
+    
+    def tabcomplete(self,text,index):
+        answer = ""
+        if text != self.text or not text:
+            self.matches = []
+            self.text = text
+
+            if not readline.get_begidx():
+                for o in self.cmdoptions:
+                    if o.startswith(text):
+                        self.matches.append(o)
+            else:
+                cmd_text = filter(None,readline.get_line_buffer().split(" "))
+                if len(cmd_text) == 1:
+                    self.matches = self.requests[:] 
+                else:
+                    self.matches = [s for s in self.requests if s.startswith(cmd_text[-1])]
+                
+
+            if len(self.matches) == 1:
+                ret = self.matches[0]
+            elif len(self.matches) > 1:
+                self.text = str(self.matches)
+            elif len(self.matches) == 0:
+                self.text = str(self.matches)
+            
+        else:
+            try:
+                ret = self.matches[state]
+            except IndexError:
+                pass
+    
+        try:
+            ret = self.matches[index]
+        except:
+            pass
+
+        '''
+        if len(ret):
+            sys.__stdout__.write("\n")
+        sys.__stdout__.write("%s[^.^]> %s%s" % (PURPLE,CLEAR,ret))
+        sys.__stdout__.flush()
+        '''
+        return ret
+                         
 
 if __name__ == "__main__":
 
