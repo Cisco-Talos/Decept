@@ -22,9 +22,10 @@ saved_dict = {}
 
 IP = ""
 PORT = ""
-TIMEOUT = .5
+TIMEOUT = 1
 socket_mode = "kill"
 sock = None
+serv_sock = None
 
 changes_flag = False
 
@@ -51,6 +52,8 @@ def main():
         "print_mode":set_print_mode,
         "sethost":sethost,
         "pasteraw":paste_request,
+        "pastehex":paste_hexstream,
+        "pastecarray":paste_carray,
         "cmp":cmp_requests,
         "help":print_help,
         "?":print_help,
@@ -173,7 +176,7 @@ def set_socket_mode(mode):
 
 def send_bytes(mode,*request_ids):
     global sock
-    serv_sock = None
+    global serv_sock
 
     if socket_mode != "persist" or sock == None:
         if mode == "client": 
@@ -187,14 +190,16 @@ def send_bytes(mode,*request_ids):
                 return
 
         elif mode == "server":
-            if serv_sock == None:
-                print "boop"
+            try:
+                sock,cli_addr = serv_sock.accept()
+            except:
                 serv_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
                 serv_sock.bind((IP,PORT))
                 print "Bound to %s:%d"%(IP,PORT)
                 serv_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
                 serv_sock.listen(1)
-            sock,cli_addr = serv_sock.accept()
+                sock,cli_addr = serv_sock.accept()
+
             print "[1.1] Connection bekommt: (%s:%d)"%(cli_addr)
             sock.settimeout(TIMEOUT)
             # we recv first if server sock. Might need cmdline flag later
@@ -210,25 +215,43 @@ def send_bytes(mode,*request_ids):
         print CYAN + "[>.>] Sending %s %d bytes~"%(request_id,len(req))
         try:
             sock.send(req)
-            resp = get_bytes(sock)
+            ret = get_bytes(sock)
+
+            if ret:
+                print YELLOW + "[<.<] Got %d bytes~" % len(ret)
+                if len(ret) > 0x1000: 
+                    ret = ret[0:0x1000]
+
+                buf = "" 
+                for char in ret:
+                    if ord(char) >= 0x30 and ord(char) <= 122 and ascii_flag:
+                        buf+=char
+                    else:
+                        buf+="\\x%02x"%ord(char)
+                print buf
+            else:
+                print "[x.x] No response..."
+
         except Exception as e:
             if "Broken pipe" in e:
                 sock = None
+                break
             else:
                 print e
 
         #print "[!-!] Saving response as %s_resp"%(request_id)
         #save_request("%s_resp"%request_id,buf)
+
+    sock = None
     
+    '''
     if socket_mode != "persist":
         sock.close()
         if mode == "server":
-            sock.close()
             serv_sock.close()
+    '''
    
          
-
-
     
 def get_bytes(sock):
     tmp = ""
@@ -243,21 +266,7 @@ def get_bytes(sock):
         except:
             break
 
-    if len(ret):
-        print YELLOW + "[<.<] Got %d bytes~" % len(ret)
-        if len(ret) > 0x1000: 
-            ret = ret[0:0x1000]
-
-        buf = "" 
-        for char in ret:
-            if ord(char) >= 0x30 and ord(char) <= 122 and ascii_flag:
-                buf+=char
-            else:
-                buf+="\\x%02x"%ord(char)
-        print buf
-
-    else:
-        print "[x.x] No response..."
+    return ret
 
 
 def edit_request(request_id,start_index,new_val):
@@ -468,12 +477,44 @@ def cmp_requests(req1,req2):
     buf += CLEAR
     
     print "[^_^] Request Diff: (Key:%sMATCH,%sDIFF,%sAPPEND)\n%s%s" % (GREEN,YELLOW,CYAN,buf,CLEAR)
-        
 
-def paste_request(request_name):
-    print "[!.!] Being pasting request"
+
+def process_carray(req_buf):
+    buf = ""
+    left_bracket = req_buf.find("*/")+2
+    right_bracket = req_buf.rfind("}")
+    if left_bracket == -1 or right_bracket == -1:
+        print "[x.x] Bracket missing for paste_carray..."
+        return ""
+    
+    byte_buf = req_buf[left_bracket:right_bracket].replace("\n","") 
+    for b in byte_buf.split(", "):
+        try:
+            i = int(b,16)
+            if i > 0x30 and i < 122: 
+                buf+=chr(i)
+            else:
+                buf+= "\\x%02x"%i
+        except:
+            pass
+
+    return buf
+    
+
+def process_hexstream(buf):
+    req_buf = ""
+    for i in range(0,len(buf),2):
+        tmp = chr(int(buf[i:i+2],16))
+        if ord(tmp) > 0x30 and ord(tmp) < 122: 
+            req_buf += tmp
+        else:
+            req_buf += "\\x%02x"%ord(tmp)
+
+    return req_buf
+
+def paste_process(request_name,format_function):
     print "Newlines will be ignored, use \\x0a for newlines in bytestream" 
-    print "Ctrl-C to finish input"
+    print "Comment lines with '#'. Ctrl-C to finish input (and remember to hit <ENTER> first)"
 
     buf = ""
     while True: 
@@ -486,11 +527,27 @@ def paste_request(request_name):
                 buf+=tmp
         except KeyboardInterrupt:
             break
+    
+    if format_function != None:
+        buf = format_function(buf)
 
     if len(buf):
         save_request(request_name,buf)
     else:
         print "[1.1] No-go on saving of %s" % request_name
+
+def paste_carray(request_name):
+    print "[!.!] Being pasting carray request"
+    paste_process(request_name,process_carray)
+
+def paste_hexstream(request_name):
+    print "[!.!] Being pasting hexstream request"
+    paste_process(request_name,process_hexstream)
+
+def paste_request(request_name):
+    print "[!.!] Being pasting request"
+    paste_process(request_name,None)
+
 
 def usage():
     print "[?.?] Usage: %s <ip> <port>" 
