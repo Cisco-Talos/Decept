@@ -6,12 +6,12 @@ import sys
 import os
 
 # where we look for our initial first-run requests:
-inp_dir = %s 
+inp_dir = %s
 
 # after we've loaded > 1 time, everything is saved to here:
-work_dir = %s 
-
+work_dir = %s
 # work_dir is overwritten if the --workdir param is given
+
 
 # for printing purposes only 
 ascii_threshold = .60
@@ -487,8 +487,11 @@ def process_carray(req_buf):
         print "[x.x] Bracket missing for paste_carray..."
         return ""
     
-    byte_buf = req_buf[left_bracket:right_bracket].replace("\n","") 
-    for b in byte_buf.split(", "):
+    byte_buf = req_buf[left_bracket:right_bracket].replace("\n","").replace(" ","") 
+    
+    print repr(byte_buf)
+    print byte_buf.split(",")
+    for b in byte_buf.split(","):
         try:
             i = int(b,16)
             if i > 0x30 and i < 122: 
