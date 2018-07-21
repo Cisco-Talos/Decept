@@ -529,8 +529,11 @@ class DeceptProxy():
 
             self.dummy_packet+= "\x00\x00" # header checksum, don't care. 
                 
-            self.inbound_dummy = self.dummy_packet + "\x7f\x00\x00\x02" + "\x7f\x00\x00\x03"
-            self.outbound_dummy = self.dummy_packet + "\x7f\x00\x00\x03" + "\x7f\x00\x00\x02"
+            l_ip = ''.join(chr(int(octet)) for octet in self.lhost.split("."))
+            r_ip = ''.join(chr(int(octet)) for octet in self.rhost.split("."))
+
+            self.inbound_dummy = self.dummy_packet + l_ip + r_ip 
+            self.outbound_dummy = self.dummy_packet + r_ip + l_ip
 
             self.inbound_dummy += struct.pack(">H",self.rport) 
             self.inbound_dummy += struct.pack(">H",self.lport) 
@@ -1474,7 +1477,7 @@ class DeceptProxy():
             l3len = (len(packet) - (0x14 + 0xC + (len("L3TOTESHEADER")-2)))
             packet = packet.replace("L3TOTESHEADER",struct.pack(">H",l3len))
 
-            self.tapsock.sendto( packet, ("127.0.0.2",0))
+            self.tapsock.sendto( packet, ("127.0.0.1",0))
 
         return inbound
 
@@ -1915,6 +1918,13 @@ Hook Files:
   --hookfile <file> | Functions imported from file:
         string outbound_hook(outbound,userdata=[]):
         string inbound_hook(outbound,userdata=[]):
+
+Tap Mode (--tap):
+    Decept will replicate any inbound/outbound traffic over localhost now
+    also, such that you can view traffic that has been decrypted or processed
+    by the inbound/outbound hooks in something more legit than the hexdump
+    function. (e.g. tcpdump/wireshark/tshark/etc) 
+     
 
 Host Config File:
   Optionally, instead of specifying a remote host, if you specify a valid

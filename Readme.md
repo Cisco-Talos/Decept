@@ -60,11 +60,19 @@ SSL Options:
 
 Hook Files:
   Optional function definitions for processing data between inbound
-  and outbound endpoints. Look at "inbound_handler"/"outbound_handler"
-  for more information.
+  and outbound endpoints. Can pass data between the hooks/proxy with
+  the userdata parameters. Look at `hooks` folder for some examples/
+  prebuilt useful things.
 
-  --outhook HOOKFILE | Function Prototype: string outbound_hook(outbound):
-  --inhook  HOOKFILE | Function Prototype: string inbound_hook(inbound):
+  --hookfile <file> | Functions imported from file:
+        string outbound_hook(outbound,userdata=[]):
+        string inbound_hook(outbound,userdata=[]):
+
+Tap Mode (--tap):
+    Decept will replicate any inbound/outbound traffic over localhost now
+    also, such that you can view traffic that has been decrypted or processed
+    by the inbound/outbound hooks in something more legit than the hexdump
+    function. (e.g. tcpdump/wireshark/tshark/etc)
 
 Host Config File:
   Optionally, instead of specifying a remote host, if you specify a valid
@@ -90,7 +98,11 @@ L4 Usage: decept.py 127.0.0.1 9999 10.0.0.1 8080
 L3 Usage: decept.py 127.0.0.1 0 10.0.0.1 0 -l icmp -r icmp
 L2 Usage: decept.py lo 00:00:00:00:00:00 eth0 ff:aa:cc:ee:dd:00
 Unix: decept.py localsocketname 0 remotesocketname 0
-Abstract: decept.py \x00localsocketname 0 \x00remotesocketname 0
+Abstract: decept.py \\x00localsocketname 0 \\x00remotesocketname 0
+
+Arp Poisoning options:
+    --poison     <config-file>    Contains "mac1|mac2|ip1|ip2" to poison.
+    --poison_int <interface>      Interface on which to poison (eth0 default)
 
 ```
 
