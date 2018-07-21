@@ -173,6 +173,8 @@ class DeceptProxy():
         self.snaplen = 65535
         self.pcap_interface = "eth0"
         self.mon_flag = None 
+
+        self.tapmode = False
     
         self.hostconf_dict = {}
 
@@ -212,8 +214,9 @@ class DeceptProxy():
                 sys.exit(0)
 
         elif self.local_end_type  == "dtls":
-            # DTLS made possible by smarter people than I, thank you Mr. Concolato ^_^; 
-            #https://stackoverflow.com/questions/27383054/python-importerror-usr-local-lib-python2-7-lib-dynload-io-so-undefined-symb
+            # DTLS made sorta possible by smarter people than I, thank you Mr. Concolato ^_^; 
+            # https://stackoverflow.com/questions/27383054/python-importerror-usr-local-lib-python2-7-lib-dynload-io-so-undefined-symb
+            # it's a hack and I can only get one side to work. Definiately a 'todo'.
             try:
                 DTLSv1_server_method = 7 
                 SSL.Context._methods[DTLSv1_server_method] = _util.lib.DTLSv1_server_method
@@ -501,6 +504,82 @@ class DeceptProxy():
         # socket Family/type/protocol
         self.server_socket_init()
 
+        if self.tapmode:
+    
+            '''
+            # since we can't do AF_PACKET with windows, we only go down to L3.
+            dummy_frame  = "\x00"*0xC  #dst/src mac 
+            dummy_frame += "\x80\x00" #proto IP
+            '''
+
+            self.dummy_packet = "\x45" #ver,headerlen 
+            self.dummy_packet+= "\x00" # DSC
+            self.dummy_packet+= "L3TOTESHEADER" # Total len, will fixup
+            self.dummy_packet+= "??"   # ID field, doesnt' matter. 
+            self.dummy_packet+= "\x00\x00" # flags.
+            self.dummy_packet+= "\x80" #ttl.
+
+            if self.remote_end_type == "ssl" or self.remote_end_type == "tcp":
+                self.dummy_packet+= "\x06" #proto => tcp
+            elif self.remote_end_type == "udp": 
+                self.dummy_packet+= "\x17" #proto => udp
+            else:
+                # if you need something else, add it yourself. 
+                self.dummy_packet+= "\x01" # proto => ICMP
+
+            self.dummy_packet+= "\x00\x00" # header checksum, don't care. 
+                
+            self.inbound_dummy = self.dummy_packet + "\x7f\x00\x00\x02" + "\x7f\x00\x00\x03"
+            self.outbound_dummy = self.dummy_packet + "\x7f\x00\x00\x03" + "\x7f\x00\x00\x02"
+
+            self.inbound_dummy += struct.pack(">H",self.rport) 
+            self.inbound_dummy += struct.pack(">H",self.lport) 
+            self.outbound_dummy += struct.pack(">H",self.lport) 
+            self.outbound_dummy += struct.pack(">H",self.rport) 
+
+            self.l4_dummy = ""
+            if self.remote_end_type == "ssl" or self.remote_end_type == "tcp":
+                self.l4_dummy+="\x00\x00\x00\x00" # seq num
+                self.l4_dummy+="\x00\x00\x00\x00" # ack num
+                self.l4_dummy+="\x50" # tcp header len
+                self.l4_dummy+="\x18" # we only really care about [psh,ack]
+                self.l4_dummy+="\x01\x00" # window size => 256
+                self.l4_dummy+="\x00\x00" # checksum, w/e.
+                self.l4_dummy+="\x00\x00" # urgent pointer
+
+            elif self.remote_end_type == "udp": 
+                l4_dummy+="L4TOTESHEADER"
+                l4_dummy+="\x00\x00"# checksum
+
+            else:
+                pass
+
+            self.inbound_dummy+=self.l4_dummy
+            self.outbound_dummy+=self.l4_dummy
+            
+
+            '''
+            try:
+            '''
+            # No AF_PACKET support in windows.
+            #self.tapsock = socket.socket(socket.AF_INET,socket.SOCK_RAW,socket.IPPROTO_RAW)
+            self.tapsock = socket.socket(socket.AF_INET,socket.SOCK_RAW,socket.IPPROTO_RAW)
+            self.tapsock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1) 
+              
+    
+            
+
+            '''
+            except Exception:
+                # Perms yo.
+                output("[x.x] Could create a raw interface. Are you running as root?",RED)
+            '''
+
+            
+                
+                
+
+
         if self.fuzz_file: 
             self.fuzzerData = mutiny.FuzzerData()
 
@@ -510,8 +589,6 @@ class DeceptProxy():
                                                             self.poison_int,
                                                             self.killswitch))
             poison_thread.start()
-
-            
 
 
         # attempt to parse config file, if any. Should be located in 'rhost'
@@ -1276,6 +1353,11 @@ class DeceptProxy():
                 
         pcap_fd.close()
 
+        
+
+
+        
+
 
     def arp_poisoner(self,config_file,interface,killswitch):
 
@@ -1384,6 +1466,16 @@ class DeceptProxy():
             inbound = self.inbound_hook(inbound,self.userdata)
             #output("[<.<] Pre-hook datalen: %d" %len(inbound),CYAN)
 
+        if self.tapmode:
+            packet = self.inbound_dummy + inbound
+            packet = packet.replace("L4TOTESHEADER",struct.pack(">H",len(inbound)))
+
+            #                     (l3stuff+l2 stuff+ string=>field bytes) 
+            l3len = (len(packet) - (0x14 + 0xC + (len("L3TOTESHEADER")-2)))
+            packet = packet.replace("L3TOTESHEADER",struct.pack(">H",l3len))
+
+            self.tapsock.sendto( packet, ("127.0.0.2",0))
+
         return inbound
 
 
@@ -1400,6 +1492,18 @@ class DeceptProxy():
             #output("[>.>] Pre-hook datalen: %d" %len(outbound),CYAN)
             outbound = self.outbound_hook(outbound,self.userdata)
             #output("[>.>] Post-hook datalen: %d" %len(outbound),CYAN)
+
+        if self.tapmode:
+            packet = self.outbound_dummy + outbound
+            packet = packet.replace("L4TOTESHEADER",struct.pack(">H",len(outbound)))
+
+            #                     (l3stuff+l2 stuff+ string=>field bytes) 
+            l3len = (len(packet) - (0x14 + 0xC + (len("L3TOTESHEADER")-2)))
+            packet = packet.replace("L3TOTESHEADER",struct.pack(">H",l3len))
+            self.tapsock.sendto( packet, ("127.0.0.1",0))
+
+
+            pass
 
         return outbound
 
@@ -1585,6 +1689,7 @@ def main():
 
         proxy.verbose = False if "--quiet" in sys.argv else True
         proxy.dont_kill = True if "--dont_kill" in sys.argv else False
+        proxy.tapmode = True if "--tap" in sys.argv else False
 
         #next, ints and strings that don't require processing
         proxy.timeout = float(dumb_arg_helper("--timeout",2))
@@ -1611,6 +1716,7 @@ def main():
             proxy.remote_keyfile = tmp_key 
             proxy.remote_certfile = tmp_cert 
        
+
         proxy.poison_file  = dumb_arg_helper("--poison")
         proxy.poison_int = dumb_arg_helper("--poison_int")
         
@@ -1846,7 +1952,7 @@ ValidCmdlineOptions = ["--recv_first","--timeout","--loglast",
                        "--pcap","--pps","--snaplen",
                        "--fuzzer","--dumpraw","-l","-r",
                        "--l2_filter","--l2_mtu","--L2_forward", 
-                       "--L3_raw",
+                       "--L3_raw", "--tap", 
                        "--hookfile",
                        "--rbind_addr","--rbind_port",
                        "--quiet","--dont_kill","--udppr",
@@ -2110,6 +2216,9 @@ def create_ebpf_filter(ip,port,proto=""):
 
     # need to return both or else epbf prog is deref'ed
     return fprog,b
+
+
+
 
 if __name__ == "__main__":
     main() 
