@@ -436,6 +436,9 @@ def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag):
  
     enable=False
 
+    # this is the dict for keeping track of things from the inbound/outbound hooks.
+    userdata = {}
+
     try:
         in_trans.start_server(server=ssh_sniff)
         if args.debug:
@@ -501,7 +504,7 @@ def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag):
         
                 # defined with --hook <hookfile> => def inbound_hook(inbound_msg):
                 if inhook:
-                    inb = inhook(inb,)
+                    inb = inhook(inb,userdata)
 
                 if len(inb):
                     #print "Post filter inb: %s" % repr(inb) 
@@ -535,7 +538,7 @@ def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag):
 
                 # defined with --hook <hookfile> => def inbound_hook(inbound_msg):
                 if outhook:
-                    outb = outhook(outb)
+                    outb = outhook(outb,userdata)
 
                 if not len(outb):
                     continue
