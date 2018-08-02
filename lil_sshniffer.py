@@ -86,6 +86,10 @@ interactive = False
 single_command = ""
 subsystem = ""
 
+# Hooks
+inhook = None
+outhook = None
+
 #COLORS!!!
 ATTN = '\033[96m'
 PURP = '\033[0;35m'
@@ -317,7 +321,14 @@ def main(args):
             client.close()
             sys.exit()    
 
-        client_thread = threading.Thread(target=client_handler_helper,args=(client,addr,dst_sock,kill_switch,hijack_flag))    
+        client_thread = threading.Thread(target=client_handler_helper,
+                                        args=(client,
+                                              addr,
+                                              dst_sock,
+                                              kill_switch,
+                                              hijack_flag,
+                                              inhook,
+                                              outhook))    
         client_thread.start()
     
     sock.close()    
@@ -327,7 +338,7 @@ def main(args):
 
 
 
-def client_handler_helper(sock,address,dst_sock,kill_switch,hijack_flag):
+def client_handler_helper(sock,address,dst_sock,kill_switch,hijack_flag,inhook,outhook):
     dt = datetime.datetime.today()
     logfile_name = dt.__str__() + ".log" 
     print_purp("[c.c] Logging to %s" % logfile_name)
@@ -349,9 +360,9 @@ def client_handler_helper(sock,address,dst_sock,kill_switch,hijack_flag):
         print_attn("[0.<] Started Transport session....")
 
         if sniff == True:
-            ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag)
+            ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag,inhook,outhook)
         else:
-            tcp_client_handler(sock,address,out_trans,logfile,kill_switch) 
+            tcp_client_handler(sock,address,out_trans,logfile,kill_switch,inhook,outhook) 
 
 
 def create_ssh_channel(out_trans):
@@ -383,7 +394,7 @@ def create_ssh_channel(out_trans):
     
     return out_chan
      
-def tcp_client_handler(sock,address,out_trans,logfile,kill_switch):
+def tcp_client_handler(sock,address,out_trans,logfile,kill_switch,inhook,outhook):
     inb = ""
     outb = ""
 
@@ -397,11 +408,19 @@ def tcp_client_handler(sock,address,out_trans,logfile,kill_switch):
                 break
 
             inb = get_bytes(out_chan)    
+
+            if inhook:
+                inb = inhook(inb,userdata)
+
             if len(inb):
                 print_warn(inb)
                 sock.send(inb)    
 
+
             outb = get_bytes(sock) 
+            if outhook:
+                outb = outhook(outb,userdata)
+
             if len(outb):  
                 print_attn(outb)
                 out_chan.send(outb)
@@ -425,7 +444,7 @@ def tcp_client_handler(sock,address,out_trans,logfile,kill_switch):
     sys.exit()
  
 
-def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag):
+def ssh_client_handler(sock,address,out_trans,logfile,kill_switch,hijack_flag,inhook,outhook):
     # If we're sniffing ssh, we also need to create
     # an SSH server that's listening for inbound conns
     in_trans = paramiko.Transport(sock)
