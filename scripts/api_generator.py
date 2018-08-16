@@ -114,10 +114,11 @@ def main(dumpraw_dir,delim="",indexes=""):
     template = ""
     print "[4.4] Reduced down to %d unique requests"%request_count
     try:
-        with open('replayer_template.py',"rb") as f:
+        template_loc = os.path.join(os.path.dirname(os.path.abspath(__file__)),"replayer_template.py")
+        with open(template_loc,"rb") as f:
             template = f.read()
     except:
-        print "[x.x] Could not find api_replayer.py template..."
+        print "[x.x] Could not find api_replayer.py template:%s..." % template_loc
         sys.exit()    
     
     for i in range(0,100):

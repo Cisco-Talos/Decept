@@ -580,6 +580,9 @@ def print_help():
     "sethost":sethost(ip,port)                    - Change remote endpoint to <ip>:<port>
     "pasteraw":paste_request(request_name)        - Enter mode to input raw bytes till CTRL+C 
                                                     and save as <request_name>
+
+    "pastehex":paste_hexstream(request_name)      - Enter mode to input a hexstream till CTRL+C.
+                                                    (e.g. "3abc12ef10") 
     "cmp":cmp_requests(r1,r2)                     - Prints out color diff of requests r1,r2
 
     '''
