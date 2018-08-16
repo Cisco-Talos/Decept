@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import traceback
 import readline
 import socket
 import glob
@@ -433,6 +434,7 @@ def cmp_requests(req1,req2):
         for x in range(len(shorter),i+4,-1): 
             #print "start i(%d),j(%d),y(%d),x(%d)"%(i,j,y,x)
             match = longer[j:].find(shorter[i:x])
+            # exact match at beginning of both
             if match == 0:
                 #print YELLOW + "Found match " + CLEAR + "ind(%d) %s\nin\n%s"%(match,repr(shorter[i:x]),repr(longer[j:]))
 
@@ -446,26 +448,28 @@ def cmp_requests(req1,req2):
                 i+=(x-i)
                 break
 
+            # extra bytes in longer before match, add extra then continue
+            elif match > 0:
+                buf += YELLOW
+                for long_ind in range(j,j+match+1):
+                    if ord(longer[long_ind]) >= 0x30 and ord(longer[long_ind]) <= 122:
+                        buf+=longer[long_ind]
+                    else:
+                        buf+="\\x%02x"%ord(longer[long_ind])
+
+                j += match
+                continue 
+
+            # No match for the given byteset... 
+            #if x == i+3:
+            #    pass
+                
+
+        # We hit the end of shorter req, just append longer now. 
         if i >= len(shorter) or j > len(shorter):
             break  
                 
-        
-        # no min 4 byte match
-        buf+=YELLOW
-        #print "break i(%d),j(%d),y(%d),x(%d)"%(i,j,y,x)
-        #print "stop match ind(%d) %s\nin\n%s"%(match,repr(shorter[i:]),repr(longer[j:]))
-        for q in range(0,match+1):
-            if ord(longer[j+q]) >= 0x30 and ord(longer[j+q]) <= 122:
-                buf+=longer[j+q]
-            else:
-                buf+="\\x%02x"%ord(longer[j+q])
-            j+=match
-            j+=1
-
         i+=1
-        if j >= len(shorter):
-            #print "i(%d),j(%d),lenshort(%d)"%(i,j,len(shorter))
-            break
     
     buf += CYAN
     s = len(shorter)
@@ -580,7 +584,6 @@ def print_help():
     "sethost":sethost(ip,port)                    - Change remote endpoint to <ip>:<port>
     "pasteraw":paste_request(request_name)        - Enter mode to input raw bytes till CTRL+C 
                                                     and save as <request_name>
-
     "pastehex":paste_hexstream(request_name)      - Enter mode to input a hexstream till CTRL+C.
                                                     (e.g. "3abc12ef10") 
     "cmp":cmp_requests(r1,r2)                     - Prints out color diff of requests r1,r2
