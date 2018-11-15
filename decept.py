@@ -277,7 +277,13 @@ class DeceptProxy():
                     # necessary for connectionless
 
                     if self.local_end_type == "udp":
-                        tmp,(_,tmpport) = sock.recvfrom(65535) 
+                        ret_struct = sock.recvfrom(65535) 
+                        try:
+                            tmp,(_,tmpport) = ret_struct 
+                        except ValueError:
+                            # ipv6 recvfrom gives more data
+                            tmp,(_,tmpport,_,_) = ret_struct 
+    
                         if tmpport != self.lport and tmpport != self.rport and not self.srcport: 
                             self.lport = tmpport
                             self.lhost = _
