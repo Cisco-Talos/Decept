@@ -714,7 +714,7 @@ class DeceptProxy():
             if self.local_end_type == "ssl":
                 try:
                     schro_local = self.server_context.wrap_socket(local_socket, server_side=True)  
-                    output("[^.^] Local ssl wrap successful",GREEN,ploc)
+                    output("[^.^] Local ssl wrap successful",GREEN,plock)
                 except ssl.SSLError as e:
                     output("[x.x] Unable to wrap local SSL socket.",YELLOW, plock)
                     output(str(e),RED, plock)
