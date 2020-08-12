@@ -1045,7 +1045,7 @@ class DeceptProxy():
                             self.pkt_count+=1
     
                             ts = datetime.now().strftime("%H:%M:%S.%f")
-                            if self.remote_end_type in ConnectionBased:
+                            if self.remote_end_type in ConnectionBased and cli_addr:
                                 self.buffered_send(schro_remote,buf)
                                 output("[o.o] %s Sent %d bytes to remote (%s:%d->%s:%d)\n" % (ts, len(buf),cli_addr[0],cli_addr[1],self.rhost,self.rport),CYAN)
                             elif self.remote_end_type == "stdout" or self.local_end_type == "stdin": 
