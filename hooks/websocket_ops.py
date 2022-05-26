@@ -53,25 +53,25 @@ def outbound_hook(outbound_data,userdata=[]):
 
         elif fin:
             if len(userdata):
-                print "Reassembled fragment message:"
+                print("Reassembled fragment message:")
                 unpacked = ''.join(userdata) + unpacked  
-                print repr(unpacked)
+                print(repr(unpacked))
                 for i in range(0,len(userdata)):
                     userdata.pop()
 
             if ops[opcode] == "text":
-                print unpacked
+                print (unpacked)
             elif ops[opcode] == "binary":
-                print "Websocket binary dump: "
-                print "\\x" + "\\x".join([c for c in unpacked])
+                print("Websocket binary dump: ")
+                print("\\x" + "\\x".join([c for c in unpacked]))
             elif ops[opcode] == "close":      
-                print "Websocket Close Msg"
+                print("Websocket Close Msg")
                 return outbound_data
             elif ops[opcode] == "ping":      
-                print "Websocket Ping Msg"
+                print("Websocket Ping Msg")
                 return outbound_data
             elif ops[opcode] == "pong":      
-                print "Websocket Pong Msg"
+                print("Websocket Pong Msg")
                 return outbound_data
             elif ops[opcode] == "continuation": #conintuation?
                 unpacked = ''.join(userdata) + unpacked
@@ -89,7 +89,7 @@ def outbound_hook(outbound_data,userdata=[]):
             return repacked
 
     except Exception as e:
-        print e
+        print(e)
         return outbound_data
 
 # According to the rfc, the mask should not be set here (i.e. no encoding).
@@ -134,7 +134,7 @@ def unpack_ws_packet(data,server=False):
     payload_len = paylen_mask & 0x7F
 
     if mask != 1 and not server:
-        print "[?.?] Non-masked message? (mask=>%d)"%mask
+        print("[?.?] Non-masked message? (mask=>%d)"%mask)
      
     if payload_len == 126:
         payload_len = struct.unpack(">H",data[2:4])[0] 
@@ -144,12 +144,12 @@ def unpack_ws_packet(data,server=False):
         bytes_read = 10
 
     if payload_len > (len(data)): 
-        print "Malformed length field: %d (actual: %d). Truncating"%(payload_len,len(data))
+        print("Malformed length field: %d (actual: %d). Truncating"%(payload_len,len(data)))
         payload_len = (len(data))
         
     if mask and not server:
         mask = struct.unpack(">I",data[bytes_read:bytes_read+4])[0]
-        print "fin: %d, opcode: %s, mask: 0x%x, payload_len: %d"%(fin,ops[opcode],mask,payload_len)
+        print("fin: %d, opcode: %s, mask: 0x%x, payload_len: %d"%(fin,ops[opcode],mask,payload_len))
         bytes_read+=4  
         payload_data = data[bytes_read:]
         decoded = xor_ops(mask,payload_data,payload_len)

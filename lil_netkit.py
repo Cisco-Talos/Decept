@@ -98,7 +98,7 @@ class lil_netkit():
             self.client_buffer = SSHClientBuffer(client_channel,server_channel)
 
     def disable_echo(self):
-        print "DISABLEING ECHO"
+        print("DISABLEING ECHO")
         self.client_buffer.disable_echo()
 
     def enable_echo(self):
@@ -116,7 +116,7 @@ class lil_netkit():
                 return message
 
             if DEBUG:
-                print "FILTER_RULE: %s" % str(filter_rule)
+                print("FILTER_RULE: %s" % str(filter_rule))
             good = False
 
             # case: "" => always execute
@@ -124,18 +124,18 @@ class lil_netkit():
                 for action in filter_rule[1]:
                     try:
                         if DEBUG:
-                            print action
+                            print(action)
                         ret = action(message)
                         if not ret:
                             if DEBUG:
-                                print "Couldn't apply action:%s" %(str(action))
+                                print("Couldn't apply action:%s" %(str(action)))
                     except Exception as e:
                         try:
                             action()
                         except:
                             pass
                         if DEBUG:
-                            print str(e)
+                            print(str(e))
                 continue
       
             # case: [1,2,3] => only execute if parser match 
@@ -143,9 +143,9 @@ class lil_netkit():
                 
                 if DEBUG: 
                     #print "TMPSPLIT == %s" % repr(tmp_split)
-                    print type(tmp_split)
-                    print "TMP[%d]:%s ~= %s??" % (i,tmp_split[i],filter_rule[0][i])
-                    print filter_rule[0]
+                    print(type(tmp_split))
+                    print("TMP[%d]:%s ~= %s??" % (i,tmp_split[i],filter_rule[0][i]))
+                    print(filter_rule[0])
             
                 if tmp_split[i].find(filter_rule[0][i]) != 0:
                     # no match, try next filter_rule
@@ -157,17 +157,17 @@ class lil_netkit():
            
             if not good:
                 if DEBUG:
-                    print "no good"
+                    print ("no good")
                 continue
 
             for action in filter_rule[1]: 
                 if DEBUG:
-                    print "APPLYING ACTION:%s" % str(action)
+                    print("APPLYING ACTION:%s" % str(action))
                 try:
                     ret = action(message)
                     if not ret:
                         if DEBUG:
-                            print "Couldn't apply action:%s" %(str(action))
+                            print("Couldn't apply action:%s" %(str(action)))
                         continue
                     
                 except Exception as e:
@@ -175,24 +175,24 @@ class lil_netkit():
 
         if ret:
             if DEBUG:
-                print ret
+                print(ret)
             return ret
         else:
             return message
                 
              
     def inbound_filter(self,message):
-            print GREEN
-            print "INbound filter on message: %s" % message
-            print CLEAR
+            print(GREEN)
+            print("INbound filter on message: %s" % message)
+            print(CLEAR)
             return self.directional_filter(self.in_filter_list,message)
 
     def outbound_filter(self,message):
             ret = self.client_buffer.take_input_action(message)
             if ret:
-                print GREEN
-                print "Outbound filter on message: %s" % ret
-                print CLEAR
+                print(GREEN)
+                print("Outbound filter on message: %s" % ret)
+                print(CLEAR)
                 return self.directional_filter(self.out_filter_list,ret)
             return []
              
@@ -303,7 +303,7 @@ class SSHClientBuffer(object):
 
     def debug_output(self,string):
         if self.debug:
-            print "[?.?] Debug: %s" % string 
+            print("[?.?] Debug: %s" % string) 
 
     # for when \t or arrows are in play
     # and we expect an immediate response
@@ -740,16 +740,16 @@ class CiscoSSHClientBuffer(SSHClientBuffer):
             tmp = self.get_server_response(self.timeout,increase_timeout=False)         
             resp+=tmp
             if DEBUG:
-                print "RESPONSE TO ?: %s" % repr(resp)
+                print("RESPONSE TO ?: %s" % repr(resp))
         
 
         tmp = resp.find("\r\n")
         if DEBUG:
-            print "sendint to cli:%s" % repr(resp[tmp:])
+            print("sendint to cli:%s" % repr(resp[tmp:]))
         self.client.send(resp[tmp:]) # ignoring the echoing back
         last_line = resp.split("\r\n")[-1]
         if DEBUG:
-            print "last_line : %s" % repr(last_line)
+            print("last_line : %s" % repr(last_line))
 
         if "--More--" in last_line:    
             self.more_handler()
@@ -801,14 +801,14 @@ class CiscoSSHClientBuffer(SSHClientBuffer):
 
         tmp = ''.join(self.client_buffer)
         if DEBUG:
-            print "TMP: %s" % repr(tmp)
-            print repr(buff)
+            print("TMP: %s" % repr(tmp))
+            print(repr(buff))
 
         # Case 1: No completion was found or >1 completion
         try:
             if (buff.split(">")[1] == tmp) or (buff.split("#")[1] == tmp): 
                 if DEBUG:
-                    print "path2"
+                    print("path2")
                 self.client.send("\x08" * (len(filter(self.ascii_filter,self.client_buffer))))
                 self.client.send("\x07")
                 self.client.send(tmp)
@@ -818,7 +818,7 @@ class CiscoSSHClientBuffer(SSHClientBuffer):
         except:
             # case 3: Valid Completion was found
             if DEBUG:
-                print "path1"
+                print("path1")
             self.cursor_index = len(self.client_buffer)
 
             # to clear out both buffers
@@ -833,7 +833,7 @@ class CiscoSSHClientBuffer(SSHClientBuffer):
         
             self.client.send(buff)
             if DEBUG:
-                print repr(buff)
+                print(repr(buff))
             # in order to find where the completion is located accurately,
             # search from left, discard first instance of client buffer
             # e.g. 'en\r\nasig1-oob1>enable '
@@ -842,7 +842,7 @@ class CiscoSSHClientBuffer(SSHClientBuffer):
             self.cursor_index = len(self.client_buffer)
     
             if DEBUG:
-                print "Client Response: %s" % ''.join(self.client_buffer)
+                print("Client Response: %s" % ''.join(self.client_buffer))
 
 
     def set_hijack_flag(self):

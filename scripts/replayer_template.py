@@ -79,22 +79,22 @@ def main():
             load_request_dir(inp_dir)
             new_workdir(work_dir)
         except:
-            print "[x.x] Unable to load %s or %s"%(work_dir,inp_dir)
+            print ("[x.x] Unable to load %s or %s"%(work_dir,inp_dir))
             sys.exit()
             
     if len(request_dict) == 0:
-        print "[x.x] Unable to read in any requests from %s" % inp_dir
+        print("[x.x] Unable to read in any requests from %s" % inp_dir)
         sys.exit()
 
 
     tab_complete = TabCompleter(cmd_dict,request_dict)
-    print "[^_^] Loaded %d requests"%len(request_dict)
+    print("[^_^] Loaded %d requests"%len(request_dict))
 
     while True:
         try:
             inp = filter(None,raw_input("%s[^.^]> %s"%(PURPLE,CLEAR)).split(" "))
         except:
-            print ""
+            print("")
             continue 
 
         if not len(inp):
@@ -104,20 +104,20 @@ def main():
             args = inp[1:]
             cmd_dict[cmd](*args)
         except KeyError as e:
-            print e
+            print(e)
         
             try:
                 os.system(" ".join(inp))
             except Exception as e:
-                print e
-                print "[x.x] Invalid command: %s" % inp
+                print(e)
+                print("[x.x] Invalid command: %s" % inp)
         except KeyboardInterrupt:
             continue
         except TypeError as e:
-            print "[?.?] Wrong num of params for command %s"%cmd
-            print e
+            print("[?.?] Wrong num of params for command %s"%cmd)
+            print(e)
         except Exception as e:
-            print e
+            print(e)
     
 
 def sethost(ip,port=""):
@@ -129,16 +129,16 @@ def sethost(ip,port=""):
         try:
             ip,port = ip.split(":")
         except:
-            print "[;_;] Bad ip/port"
+            print("[;_;] Bad ip/port")
 
     try:
         IP = ip
         if len(IP.split(".")) != 4:
-            print "[>.>] Invalid IP given"
+            print("[>.>] Invalid IP given")
             return
         PORT = int(port)
     except:
-        print "[x.x] Invalid params given to sethost!"
+        print("[x.x] Invalid params given to sethost!")
         return
        
   
@@ -151,7 +151,7 @@ def set_print_mode(mode):
         ascii_flag = False
 
 def list_request():
-    print "[!.!] Current Request Listing~" 
+    print("[!.!] Current Request Listing~")
     req_list = request_dict.keys()
     req_list.sort()
     for req in req_list:
@@ -173,7 +173,7 @@ def set_socket_mode(mode):
     elif mode == "kill":
         socket_mode = "kill"
     else:
-        print "invalid set_socket_mode args: %s" % (mode,)
+        print("invalid set_socket_mode args: %s" % (mode,))
 
 def send_bytes(mode,*request_ids):
     global sock
@@ -186,8 +186,8 @@ def send_bytes(mode,*request_ids):
                 sock.connect((IP,PORT))
                 sock.settimeout(TIMEOUT)
             except:
-                print "[x.x] Unable to connect to %s:%d"%(IP,PORT)
-                print "Consider using 'sethost' cmd to fix." 
+                print("[x.x] Unable to connect to %s:%d"%(IP,PORT))
+                print("Consider using 'sethost' cmd to fix.") 
                 return
 
         elif mode == "server":
@@ -196,30 +196,30 @@ def send_bytes(mode,*request_ids):
             except:
                 serv_sock = socket.socket(socket.AF_INET,socket.SOCK_STREAM) 
                 serv_sock.bind((IP,PORT))
-                print "Bound to %s:%d"%(IP,PORT)
+                print("Bound to %s:%d"%(IP,PORT))
                 serv_sock.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
                 serv_sock.listen(1)
                 sock,cli_addr = serv_sock.accept()
 
-            print "[1.1] Connection bekommt: (%s:%d)"%(cli_addr)
+            print("[1.1] Connection bekommt: (%s:%d)"%(cli_addr))
             sock.settimeout(TIMEOUT)
             # we recv first if server sock. Might need cmdline flag later
             # if/when we run into a server socket that needs to send first.
             get_bytes(sock)
         else:
-            print "[?.?] Invalid send_bytes mode: %s" % mode
+            print("[?.?] Invalid send_bytes mode: %s" % mode)
             return
 
 
     for request_id in request_ids:
         req = request_dict[request_id]
-        print CYAN + "[>.>] Sending %s %d bytes~"%(request_id,len(req))
+        print(CYAN + "[>.>] Sending %s %d bytes~"%(request_id,len(req)))
         try:
             sock.send(req)
             ret = get_bytes(sock)
 
             if ret:
-                print YELLOW + "[<.<] Got %d bytes~" % len(ret)
+                print(YELLOW + "[<.<] Got %d bytes~" % len(ret))
                 if len(ret) > 0x1000: 
                     ret = ret[0:0x1000]
 
@@ -229,16 +229,16 @@ def send_bytes(mode,*request_ids):
                         buf+=char
                     else:
                         buf+="\\x%02x"%ord(char)
-                print buf
+                print(buf)
             else:
-                print "[x.x] No response..."
+                print("[x.x] No response...")
 
         except Exception as e:
             if "Broken pipe" in e:
                 sock = None
                 break
             else:
-                print e
+                print(e)
 
         #print "[!-!] Saving response as %s_resp"%(request_id)
         #save_request("%s_resp"%request_id,buf)
@@ -287,7 +287,7 @@ def rename_request(old_request_id,new_request_id,copyOnly=False):
             os.remove(filename)
         changes_flag = True
     except Exception as e:
-        print "Could not remove old request %s (%s)"%(old_request_id,e)
+        print("Could not remove old request %s (%s)"%(old_request_id,e))
         return
 
     save_request(new_request_id,val)
@@ -312,7 +312,7 @@ def save_request(request_id,request_value):
     try:
         request_dict[request_id] = filtered_request
     except Exception as e:
-        print "[x.x] Could not add request %s to request_dict, returning."%request_id
+        print("[x.x] Could not add request %s to request_dict, returning."%request_id)
         return
 
     req_path = os.path.join(work_dir,request_id)
@@ -322,8 +322,8 @@ def save_request(request_id,request_value):
             f.write(request_value)
         changes_flag = True
     except Exception as e:
-        print "[x.x] Could not create %s in work_dir"%request_id
-        print e
+        print("[x.x] Could not create %s in work_dir"%request_id)
+        print(e)
         return 
 
 
@@ -332,7 +332,7 @@ def print_request(request_id,truncate=False):
     try:
         req = request_dict[request_id]
     except KeyError:
-        print "[x.x] Request %s not found in request_dict"%request_id
+        print("[x.x] Request %s not found in request_dict"%request_id)
         return
     
     if truncate and len(req) > 50:
@@ -345,16 +345,16 @@ def print_request(request_id,truncate=False):
             buf+=char
         else:
             buf+="\\x%02x"%ord(char)
-    print "-------------------"
+    print("-------------------")
     if len(req) == 50:
         buf+="%s[...] (50/%d bytes)%s" % (YELLOW,old_len,CLEAR)
-    print "%s%s (%d bytes (0x%lx))\n%s%s" % (CYAN,request_id,len(req),len(req),CLEAR,buf)          
+    print("%s%s (%d bytes (0x%lx))\n%s%s" % (CYAN,request_id,len(req),len(req),CLEAR,buf))
 
 
 def cleanup(): 
     if changes_flag:
-        print "[?.?] Would you like to save request changes to the current workdir? (y/n)"
-        if raw_input(":").lower() == "y":
+        print("[?.?] Would you like to save request changes to the current workdir? (y/n)")
+        if input(":").lower() == "y":
             new_workdir(work_dir,force=True)
     sys.exit()
              
@@ -364,9 +364,9 @@ def new_workdir(directory,force=False):
         os.mkdir(directory)
     except:
         if not force:
-            print "[?.?] Dst dir already exists, would you like to overwrite? (y/n)" 
-            if raw_input(":").lower() != "y":
-                print "[-.-] Declining to write then, returning"
+            print("[?.?] Dst dir already exists, would you like to overwrite? (y/n)")
+            if input(":").lower() != "y":
+                print("[-.-] Declining to write then, returning")
                 return
 
     for req in request_dict:
@@ -375,7 +375,7 @@ def new_workdir(directory,force=False):
             with open(req_name,"wb") as f:
                 f.write(request_dict[req]) 
         except Exception as e:
-            print "[;_;] Unable to save request %s to %s (%e)"%(req,directory,e)
+            print("[;_;] Unable to save request %s to %s (%e)"%(req,directory,e))
             if not force:
                 return
 
@@ -393,14 +393,14 @@ def load_request(request_file):
         with open(request_file,"rb") as f:
             request_dict[request_name] = f.read()
     except Exception as e:
-        print "[x.x] Unable to load request %s (%s)" % (request_name,e)
+        print("[x.x] Unable to load request %s (%s)" % (request_name,e))
 
 def remove_request(request_name):
     try:
         del request_dict[request_name]
-        print "[!.!] %s removed from request_dict" % request_name
+        print("[!.!] %s removed from request_dict" % request_name)
     except Exception as e:
-        print "[?.?] Unable to remove %s: %s"%(request_name,e)
+        print("[?.?] Unable to remove %s: %s"%(request_name,e))
         pass
 
     try:
@@ -413,8 +413,8 @@ def cmp_requests(req1,req2):
         r1 = request_dict[req1] 
         r2 = request_dict[req2] 
     except Exception as e:
-        print "[?.?] Could not find one or more reqs: %s, %s"%(req1,req2)
-        print e
+        print("[?.?] Could not find one or more reqs: %s, %s"%(req1,req2))
+        print(e)
         return    
 
     if len(r1) > len(r2):
@@ -423,7 +423,7 @@ def cmp_requests(req1,req2):
     else:
         longer = r2
         shorter = r1 
-    print "%sLen(%s): %d, Len(%s): %d%s"%(GREEN,req1,len(r1),req2,len(r2),CLEAR) 
+    print("%sLen(%s): %d, Len(%s): %d%s"%(GREEN,req1,len(r1),req2,len(r2),CLEAR)) 
         
     buf = ""
     i = 0
@@ -480,7 +480,7 @@ def cmp_requests(req1,req2):
             buf+="\\x%02x"%ord(longer[i])
     buf += CLEAR
     
-    print "[^_^] Request Diff: (Key:%sMATCH,%sDIFF,%sAPPEND)\n%s%s" % (GREEN,YELLOW,CYAN,buf,CLEAR)
+    print("[^_^] Request Diff: (Key:%sMATCH,%sDIFF,%sAPPEND)\n%s%s" % (GREEN,YELLOW,CYAN,buf,CLEAR))
 
 
 def process_carray(req_buf):
@@ -488,13 +488,13 @@ def process_carray(req_buf):
     left_bracket = req_buf.find("*/")+2
     right_bracket = req_buf.rfind("}")
     if left_bracket == -1 or right_bracket == -1:
-        print "[x.x] Bracket missing for paste_carray..."
+        print("[x.x] Bracket missing for paste_carray...")
         return ""
     
     byte_buf = req_buf[left_bracket:right_bracket].replace("\n","").replace(" ","") 
     
-    print repr(byte_buf)
-    print byte_buf.split(",")
+    print(repr(byte_buf))
+    print(byte_buf.split(","))
     for b in byte_buf.split(","):
         try:
             i = int(b,16)
@@ -520,8 +520,8 @@ def process_hexstream(buf):
     return req_buf
 
 def paste_process(request_name,format_function):
-    print "Newlines will be ignored, use \\x0a for newlines in bytestream" 
-    print "Comment lines with '#'. Ctrl-C to finish input (and remember to hit <ENTER> first)"
+    print("Newlines will be ignored, use \\x0a for newlines in bytestream")
+    print("Comment lines with '#'. Ctrl-C to finish input (and remember to hit <ENTER> first)")
 
     buf = ""
     while True: 
@@ -541,23 +541,23 @@ def paste_process(request_name,format_function):
     if len(buf):
         save_request(request_name,buf)
     else:
-        print "[1.1] No-go on saving of %s" % request_name
+        print("[1.1] No-go on saving of %s" % request_name)
 
 def paste_carray(request_name):
-    print "[!.!] Being pasting carray request"
+    print("[!.!] Being pasting carray request")
     paste_process(request_name,process_carray)
 
 def paste_hexstream(request_name):
-    print "[!.!] Being pasting hexstream request"
+    print("[!.!] Being pasting hexstream request")
     paste_process(request_name,process_hexstream)
 
 def paste_request(request_name):
-    print "[!.!] Being pasting request"
+    print("[!.!] Being pasting request")
     paste_process(request_name,None)
 
 
 def usage():
-    print "[?.?] Usage: %s <ip> <port>" 
+    print("[?.?] Usage: %s <ip> <port>")
     sys.exit()
 
 def print_help():
@@ -590,7 +590,7 @@ def print_help():
 
     '''
 
-    print ret
+    print(ret)
        
 #colors
 RED='\033[31m'
@@ -662,7 +662,7 @@ class TabCompleter(object):
 
 if __name__ == "__main__":
 
-    print CYAN +  "<(^_^)> Decept Autogen'ed API replayer thing:" + CLEAR
+    print(CYAN +  "<(^_^)> Decept Autogen'ed API replayer thing:" + CLEAR)
     if len(sys.argv) < 3:
         usage() 
     main()

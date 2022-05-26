@@ -9,8 +9,8 @@ try:
     import decept
     
 except Exception as e:
-    print str(e)
-    print "[x.x] Couldn't import decept, exiting"
+    print(str(e))
+    print("[x.x] Couldn't import decept, exiting")
     sys.exit()
 
 
