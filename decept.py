@@ -50,6 +50,7 @@ import socket
 import struct
 import select
 import multiprocessing
+import copyreg
 
 try:
     # windows 
@@ -87,7 +88,11 @@ DEBUGGING = False
 if '-d' in sys.argv:
     DEBUGGING = True
 
-    
+# Allows for the pickling of SSLContext obects
+def save_sslcontext(obj):
+       return obj.__class__, (obj.protocol,)
+copyreg.pickle(ssl.SSLContext, save_sslcontext)    
+
 # minor hack to get decept to run on osx 
 if "darwin" in system().lower():
     socket.AF_PACKET = -1
