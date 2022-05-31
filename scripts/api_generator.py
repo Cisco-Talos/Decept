@@ -33,13 +33,13 @@ def main(dumpraw_dir,delim="",indexes=""):
     while True:
         try:
             os.mkdir(outdir) 
-            print "[0.0] Minimized dir: %s"%outdir
+            print("[0.0] Minimized dir: %s"%outdir)
             break
         except:
             outdir = os.path.join(dumpraw_dir,"minimized_%d"%attempt_counter)
             attempt_counter += 1
             if attempt_counter >=20:
-                print "Comon, get rid of some of those old minimized_* dirs. Exiting"
+                print("Comon, get rid of some of those old minimized_* dirs. Exiting")
                 sys.exit()
                 
     for f in os.listdir(dumpraw_dir):
@@ -71,16 +71,16 @@ def main(dumpraw_dir,delim="",indexes=""):
                     hash_dict[inp_file] = md5hash 
                     total_file_counter+=1
             except Exception as e:
-                print e
+                print(e)
                 continue
 
-    print "[1.1] %d entries found in dump_directory" % total_file_counter
-    print "[2.2] Added %d unique entries to hash_dict" % len(hash_dict) 
+    print("[1.1] %d entries found in dump_directory" % total_file_counter)
+    print("[2.2] Added %d unique entries to hash_dict" % len(hash_dict))
     
     if delim:
-        print "[3.3] Sorting the entries based on delimeter: %s"%repr(delim_buf)
+        print("[3.3] Sorting the entries based on delimeter: %s"%repr(delim_buf))
     elif indexes: 
-        print "[3.3] Sorting the entries bytes in file: %s"%str(indexes)
+        print("[3.3] Sorting the entries bytes in file: %s"%str(indexes))
     
     request_count = 0
     for filename in hash_dict:
@@ -99,7 +99,7 @@ def main(dumpraw_dir,delim="",indexes=""):
                 try: 
                     key+=inp_buf[num] 
                 except:
-                    print "Small file? %s" %(filename)
+                    print("Small file? %s" %(filename))
             try:
                 _ = request_dict[key]    
             except:
@@ -112,13 +112,13 @@ def main(dumpraw_dir,delim="",indexes=""):
                     f.write(inp_buf)
                 
     template = ""
-    print "[4.4] Reduced down to %d unique requests"%request_count
+    print ("[4.4] Reduced down to %d unique requests"%request_count)
     try:
         template_loc = os.path.join(os.path.dirname(os.path.abspath(__file__)),"replayer_template.py")
         with open(template_loc,"rb") as f:
             template = f.read()
     except:
-        print "[x.x] Could not find api_replayer.py template:%s..." % template_loc
+        print("[x.x] Could not find api_replayer.py template:%s..." % template_loc)
         sys.exit()    
     
     for i in range(0,100):
@@ -131,13 +131,13 @@ def main(dumpraw_dir,delim="",indexes=""):
             template = template.replace("work_dir = %s","work_dir = \"%s\""%os.path.abspath(work_dir))
             f.write(template)
             break
-        print "[>.>]; Why are there 100 api_replayers here....?"
+        print("[>.>]; Why are there 100 api_replayers here....?")
         sys.exit()
-    print "[^_^] There should hopfully be a %s script now, cheers." %fname
+    print("[^_^] There should hopfully be a %s script now, cheers." %fname)
                 
 
 def usage():
-    print "<(^_^)> Decept's API script generator.\
+    print("<(^_^)> Decept's API script generator.\
            \n**********************************\
            \nPass it a decept --dumpraw directory and the delimeter used for the api reqs.\
            \nHopefully you'll get a cool script to play with the api in return.\
@@ -145,7 +145,7 @@ def usage():
            \n\n%s <dumpraw_dir> '<api_delim>'\
            \n\nAlternatively, use --index to sort by the set of bytes inside the index\
            \nfiles located at the i'th indexes (for i in numberRange <numRange>) \
-           \n\n%s <dumpraw_dir> --index <numRange> (e.g. 1-4 or 1,3,9-15)\n"%(sys.argv[0],sys.argv[0]) 
+           \n\n%s <dumpraw_dir> --index <numRange> (e.g. 1-4 or 1,3,9-15)\n"%(sys.argv[0],sys.argv[0]) )
     sys.exit()
 
 
@@ -170,7 +170,7 @@ def validateNumberRange(inputStr, flattenList=False):
                 intRange = num.split('-')
                 # Invalid x-y-z
                 if len(intRange) > 2:
-                    print "Invalid range given"
+                    print("Invalid range given")
                     return None
                 try:
                     if not flattenList:
@@ -180,13 +180,13 @@ def validateNumberRange(inputStr, flattenList=False):
                         # Append individual elements
                         retList.extend(range(int(intRange[0]),int(intRange[1])+1))
                 except TypeError:
-                    print "Invalid range given"
+                    print("Invalid range given")
                     return None
             else:
                 try:
                     retList.append(float(num))
                 except:
-                    print "Invalid number given"
+                    print("Invalid number given")
                     return None
     # All elements in the range are valid integers or integer ranges
     if flattenList:
@@ -210,7 +210,7 @@ if __name__ == "__main__":
     except ValueError:
         delim = sys.argv[2]
     except IndexError:
-        print "No index range for --index was found [;_;]"
+        print("No index range for --index was found [;_;]")
         sys.exit()
 
     main(dumpdir,delim,index_list)

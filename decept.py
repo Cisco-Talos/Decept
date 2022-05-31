@@ -50,6 +50,7 @@ import socket
 import struct
 import select
 import multiprocessing
+import copyreg
 
 try:
     # windows 
@@ -87,7 +88,11 @@ DEBUGGING = False
 if '-d' in sys.argv:
     DEBUGGING = True
 
-    
+# Allows for the pickling of SSLContext obects
+def save_sslcontext(obj):
+       return obj.__class__, (obj.protocol,)
+copyreg.pickle(ssl.SSLContext, save_sslcontext)    
+
 # minor hack to get decept to run on osx 
 if "darwin" in system().lower():
     socket.AF_PACKET = -1
@@ -442,7 +447,7 @@ class DeceptProxy():
                 self.dumpraw = join(self.dumpraw,sub_folder) 
                 mkdir(self.dumpraw)
             except Exception as e:
-                print e
+                print(e)
                 pass
         
         # If we're attempting to write to a pcap, shouldn't it be required to be L2?
@@ -619,13 +624,13 @@ class DeceptProxy():
                             self.hostconf_dict[name] = ip
                             output("[!.!] Added %s | %s" % (name,ip),CYAN)
                     except Exception as e:
-                        print e
+                        print(e)
                         pass
         except IOError as e:
             # no such file
             pass
         except Exception as e:
-            print e
+            print(e)
             pass
 
 
@@ -1282,7 +1287,7 @@ class DeceptProxy():
 
                         else:
                             if DEBUGGING:
-                                print "DST:" + macdump(buff[0:6]) + " SRC:" + macdump(buff[6:12])
+                                print("DST:" + macdump(buff[0:6]) + " SRC:" + macdump(buff[6:12]))
                             break
 
                         self.pkt_count+=1  
@@ -1357,7 +1362,7 @@ class DeceptProxy():
                 #print "writing! %s " % repr(packet[0:self.snaplen])
 
             except Exception as e:
-                #print e
+                print(e)
                 pass
                 
         pcap_fd.close()
@@ -1394,13 +1399,13 @@ class DeceptProxy():
                             ip2 = ''.join(chr(int(c,10)) for c in ip2.split("."))
                             arp_poison_list.append((m1,m2,ip1,ip2))
                     except Exception as e:
-                        print e
+                        print(e)
                         pass
         except IOError as e:
             # no such file
             pass
         except Exception as e:
-            print e
+            print(e)
             pass
 
 
@@ -1754,7 +1759,7 @@ def main():
                     pass
                 
             except Exception as e:
-                print e
+                print(e)
                 pass
                 
     

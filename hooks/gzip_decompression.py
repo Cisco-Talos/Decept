@@ -1,6 +1,7 @@
 def inbound_hook(inbound_data,userdata=""):
     import gzip
     import tempfile
+    import os
     if "Content-Encoding: gzip" in inbound_data or "content-encoding: gzip" in inbound_data:
         data_loc = inbound_data.find("\r\n\r\n")
         if data_loc > -1:

@@ -10,8 +10,8 @@ try:
     import lil_netkit
     
 except Exception as e:
-    print str(e)
-    print "[x.x] Couldn't import decept, exiting"
+    print (str(e))
+    print ("[x.x] Couldn't import decept, exiting")
     sys.exit()
 
 
@@ -22,12 +22,12 @@ def main():
 
     b = multiprocessing.Event()
     a = lil_netkit.lil_netkit(b)
-    print "INPUT: %s"%str(sys.argv[1:])
-    print "OUTBOUND"
-    print a.outbound_filter(" ".join(sys.argv[1:]))
-    print "INBOUND"
-    print a.inbound_filter(" ".join(sys.argv[1:]))
-    print a.EventFlag.is_set()
+    print ("INPUT: %s"%str(sys.argv[1:]))
+    print ("OUTBOUND")
+    print(a.outbound_filter(" ".join(sys.argv[1:])))
+    print("INBOUND")
+    print(a.inbound_filter(" ".join(sys.argv[1:])))
+    print(a.EventFlag.is_set())
     
     
 if __name__ == "__main__":
