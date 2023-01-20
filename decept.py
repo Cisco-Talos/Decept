@@ -75,11 +75,11 @@ from os import mkdir,getcwd,remove
 
 try:
     sys.path.append(abspath(join(__file__,"../../mutiny_fuzzing_framework"))) 
-    import backend.fuzzerdata as mutiny
+    import backend.fuzzer_data as mutiny
 except ImportError:
     try:
         sys.path.append(abspath(join(__file__, "../../mutiny-fuzzer"))) 
-        import backend.fuzzerdata as mutiny
+        import backend.fuzzer_data as mutiny
     except ImportError:
         pass
 
